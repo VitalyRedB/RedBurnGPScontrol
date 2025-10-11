@@ -2,7 +2,7 @@ from flask import request, jsonify
 from db import add_point
 
 # глобальный токен (потом можно сделать персональные)
-API_TOKEN = "MY_SECRET_TOKEN"
+API_TOKEN = "SECRET123"
 
 def handle_add_point():
     data = request.get_json()

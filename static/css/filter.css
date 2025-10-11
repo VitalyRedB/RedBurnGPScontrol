@@ -1,0 +1,100 @@
+/* Карта */
+#map {
+  height: 100vh;
+  width: 100%;
+}
+
+/* Кнопка ☰ */
+.filter-button2 {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  z-index: 1001;
+  background: white;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  font-size: 20px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.filter-button {
+  position: fixed;         /* ✅ было absolute */
+  top: 15px;
+  right: 15px;
+  z-index: 2000;           /* чуть выше панели фильтра */
+  background: white;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  font-size: 20px;
+  padding: 6px 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+}
+
+
+/* Панель фильтра */
+.filter-panel {
+  position: fixed;
+  background: white;
+  box-shadow: 0 0 10px rgba(0,0,0,0.3);
+  z-index: 1000;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 280px;
+  transition: transform 0.4s ease;
+}
+
+/* ПК: панель справа */
+@media (min-width: 769px) {
+  .filter-panel {
+    top: 0;
+    right: 0;
+    height: 100vh;
+    transform: translateX(100%);
+  }
+  .filter-panel.show {
+    transform: translateX(0);
+  }
+}
+
+/* Мобильные: панель снизу */
+@media (max-width: 768px) {
+  .filter-panel {
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: auto;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    transform: translateY(100%);
+  }
+  .filter-panel.show {
+    transform: translateY(0);
+  }
+}
+
+/* Поле пользователя */
+#userFilter {
+  height: 180px;
+  font-size: 14px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
+/* Поля даты и времени */
+#dateFromFilter, #timeFromFilter,
+#dateToFilter, #timeToFilter {
+  height: 30px;
+  font-size: 13px;
+  padding: 2px 5px;
+  box-sizing: border-box;
+}
+
+
+
+
+
+

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}
+<title>GPS точки</title>
+{% endblock %}
+
+{% block body %}
+
+<!-- Кнопка открытия панели фильтров -->
+<button id="filter-toggle" class="filter-button" onclick="toggleFilterBar()">☰</button>
+
+<!-- Панель фильтров -->
+<div id="filter-panel" class="filter-panel">
+
+  <h5>Фильтр точек</h5>
+
+  <!-- Пользователи (мультивыбор) -->
+  <label for="userFilter">Пользователи</label>
+  <select id="userFilter" class="form-select" multiple>
+    <option value="" selected>Все пользователи</option>
+  </select>
+
+  <!-- Дата и время начала -->
+  <label>From date/time</label>
+  <input type="date" id="dateFromFilter" class="form-control">
+  <input type="time" id="timeFromFilter" class="form-control">
+
+  <!-- Дата и время конца -->
+  <label>To date/time</label>
+  <input type="date" id="dateToFilter" class="form-control">
+  <input type="time" id="timeToFilter" class="form-control">
+
+  <!-- Статус -->
+  <label for="statusFilter">Статус</label>
+  <select id="statusFilter" class="form-select">
+    <option value="">Все статусы</option>
+    <option value="1">Активные</option>
+    <option value="0">Пассивные</option>
+  </select>
+
+  <button class="btn btn-primary mt-2" onclick="applyFilters()">Найти</button>
+</div>
+
+<!-- Контейнер карты -->
+<div id="map"></div>
+
+<!-- Подключение библиотек Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+<!-- Awesome Markers -->
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Leaflet.awesome-markers/2.0.2/leaflet.awesome-markers.js"></script>
+
+<!-- Подключение стилей и скриптов -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/map.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/filter.css') }}">
+<script src="{{ url_for('static', filename='js/map.js') }}"></script>
+<script src="{{ url_for('static', filename='js/filter.js') }}"></script>
+
+
+
+{% endblock %}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

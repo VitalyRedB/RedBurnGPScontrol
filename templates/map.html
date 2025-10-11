@@ -1,139 +1,166 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="UTF-8">
-  <title>GPS точки</title>
-  <!-- Leaflet базовые стили -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <!-- Стили для кластеризации -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
-  <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
+{% extends "base.html" %}
+
+{% block title %}
+<title>GPS точки</title>
+{% endblock %}
+
+{% block body %}
+
+<!-- Кнопка открытия панели фильтров -->
+<button id="filter-toggle" class="filter-button">☰</button>
+
+<!-- Панель фильтра -->
+<div id="filter-panel" class="filter-panel">
+  <h5>Фильтр точек</h5>
+
+  <!-- Пользователи -->
+  <label for="userFilter">Пользователи</label>
+  <select id="userFilter" multiple>
+    <option value="" selected>Все пользователи</option>
+  </select>
+
+  <!-- Дата и время -->
+  <label>From date/time</label>
+  <input type="date" id="dateFromFilter">
+  <input type="time" id="timeFromFilter">
+
+  <label>To date/time</label>
+  <input type="date" id="dateToFilter">
+  <input type="time" id="timeToFilter">
+
+  <!-- Статус -->
+  <label for="statusFilter">Статус</label>
+  <select id="statusFilter">
+    <option value="">Все статусы</option>
+    <option value="1">Активные</option>
+    <option value="0">Пассивные</option>
+  </select>
+
+  <button onclick="applyFilters()">Найти</button>
+</div>
+
+<!-- Контейнер карты -->
+<div id="map"></div>
+
+<!-- Leaflet + MarkerCluster -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+<!-- Ваш CSS -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/map.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/filter.css') }}">
+
+<script>
+  // --- Toggle панели фильтра ---
+  const filterToggle = document.getElementById('filter-toggle');
+  const filterPanel = document.getElementById('filter-panel');
+  filterToggle.addEventListener('click', () => {
+    filterPanel.classList.toggle('show');
+  });
+
+  // --- Инициализация карты ---
+  const map = L.map('map').setView([55.751244, 37.618423], 10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+  // --- Кластеризация ---
+  const markersLayer = L.markerClusterGroup().addTo(map);
+
+  function updateMap(points) {
+    markersLayer.clearLayers();
+    points.forEach(pt => {
+      const marker = L.marker([pt.lat, pt.lon])
+        .bindPopup(`<b>ID:</b> ${pt.id}<br><b>Пользователь:</b> ${pt.user_id}<br><b>Статус:</b> ${pt.is_active ? "Активный" : "Пассивный"}`);
+      markersLayer.addLayer(marker);
+    });
+    if (points.length > 0) {
+      map.fitBounds(markersLayer.getBounds(), { padding: [50,50] });
     }
-    /* Панель фильтров */
-    #filter-bar {
-      padding: 10px;
-      background: #f0f0f0;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      position: relative;
-      z-index: 1000;
-    }
-    /* Карта занимает всё доступное пространство */
-    #map {
-      height: calc(100vh - 60px); /* вся высота окна минус панель фильтра */
-      width: 100%;
-    }
-  </style>
-</head>
-<body>
-  <h1 style="margin: 10px;">GPS точки</h1>
+  }
 
-  <!-- Фильтры -->
-  <div id="filter-bar">
-    <select id="userFilter">
-      <option value="">Все пользователи</option>
-    </select>
-
-    <input type="date" id="dateFilter">
-    <input type="time" id="timeFromFilter">
-    <input type="time" id="timeToFilter">
-
-    <button onclick="applyFilters()">Применить</button>
-  </div>
-
-  <!-- Контейнер для карты -->
-  <div id="map"></div>
-
-  <!-- Подключение библиотек -->
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
-  <script>
-    // --- Инициализация карты ---
-    const map = L.map('map', { scrollWheelZoom: true }).setView([55.75, 37.61], 5);
-
-    // Подключение базового слоя карты OpenStreetMap
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-
-    // --- Кластеризация ---
-    const markersCluster = L.markerClusterGroup(); // создаем объект для кластеров
-    map.addLayer(markersCluster); // добавляем на карту
-
-    // --- Запрос данных с сервера ---
-    async function fetchPoints() {
-      const user = document.getElementById('userFilter').value;
-      const date = document.getElementById('dateFilter').value;
-      const timeFrom = document.getElementById('timeFromFilter').value;
-      const timeTo = document.getElementById('timeToFilter').value;
-
-      // Формируем параметры запроса
-      const params = new URLSearchParams();
-      if (user) params.append('user_id', user);
-      if (date) params.append('date', date);
-      if (timeFrom) params.append('time_from', timeFrom);
-      if (timeTo) params.append('time_to', timeTo);
-
-      // Отправляем запрос к API
-      const response = await fetch('/api/points?' + params.toString());
-      const data = await response.json();
-
-      updateMap(data);
-    }
-
-    // --- Обновление карты новыми данными ---
-    function updateMap(data) {
-      markersCluster.clearLayers(); // очищаем старые точки
-
-      // Добавляем новые точки в кластер
-      data.forEach(point => {
-        const marker = L.marker([point.lat, point.lon])
-          .bindPopup(`${point.user_id}<br>${point.date} ${point.time}`);
-        markersCluster.addLayer(marker);
-      });
-
-      // Автоцентрирование карты по точкам
-      if (data.length > 0) {
-        const group = L.featureGroup(markersCluster.getLayers());
-        map.fitBounds(group.getBounds().pad(0.1));
-      }
-    }
-
-    // --- Загрузка списка пользователей для фильтра ---
-    async function loadUsers() {
+  // --- Загрузка всех точек ---
+  async function loadAllPoints() {
+    try {
       const response = await fetch('/api/points');
       const data = await response.json();
-      const users = [...new Set(data.map(p => p.user_id))];
+      updateMap(data);
+    } catch (err) {
+      console.error("Ошибка при загрузке точек:", err);
+    }
+  }
 
-      const select = document.getElementById('userFilter');
-      select.innerHTML = '<option value="">Все пользователи</option>'; // очищаем перед загрузкой
-      users.forEach(user => {
-        const option = document.createElement('option');
-        option.value = user;
-        option.textContent = user;
-        select.appendChild(option);
+  // --- Подгрузка пользователей ---
+  async function loadUsers() {
+    try {
+      const response = await fetch('/api/users');
+      const users = await response.json();
+      const userSelect = document.getElementById('userFilter');
+
+      users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.textContent = u;
+        userSelect.appendChild(opt);
       });
+    } catch (err) {
+      console.error("Ошибка при загрузке пользователей:", err);
     }
+  }
 
-    // --- Применение фильтров ---
-    function applyFilters() {
-      fetchPoints();
-    }
-
-    // --- Автозагрузка при старте ---
+  window.addEventListener('DOMContentLoaded', () => {
     loadUsers();
-    fetchPoints();
-    setInterval(fetchPoints, 100000); // автообновление каждые 100 сек
-  </script>
-</body>
-</html>
+    loadAllPoints();
+  });
+
+  // --- Применение фильтров ---
+  async function applyFilters() {
+    const userSelect = document.getElementById('userFilter');
+    const selectedUsers = Array.from(userSelect.selectedOptions).map(o => o.value).filter(v=>v!=="");
+
+    const params = new URLSearchParams();
+    selectedUsers.forEach(u => params.append('user_id', u));
+
+    const dateFrom = document.getElementById('dateFromFilter').value;
+    const dateTo = document.getElementById('dateToFilter').value;
+    const timeFrom = document.getElementById('timeFromFilter').value;
+    const timeTo = document.getElementById('timeToFilter').value;
+    const status = document.getElementById('statusFilter').value;
+
+    if(dateFrom) params.append('date_from', dateFrom);
+    if(dateTo) params.append('date_to', dateTo);
+    if(timeFrom) params.append('time_from', timeFrom);
+    if(timeTo) params.append('time_to', timeTo);
+    if(status!=="") params.append('is_active', status);
+
+    try {
+      const response = await fetch('/api/points?' + params.toString());
+      const data = await response.json();
+      updateMap(data);
+    } catch(err) {
+      console.error("Ошибка при фильтрации:", err);
+    }
+  }
+</script>
+
+{% endblock %}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -5,65 +5,101 @@ import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_NAME = os.path.join(BASE_DIR, "database.db")
 
-def init_db():
-    """Создаем базу и тестовые данные при первом запуске."""
-    if not os.path.exists(DB_NAME):
-        conn = sqlite3.connect(DB_NAME)
-        c = conn.cursor()
-        c.execute('''CREATE TABLE points (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        user_id TEXT,
-                        date TEXT,
-                        time TEXT,
-                        lat REAL,
-                        lon REAL
-                    )''')
-
-        test_data = [
-            ("user1", "2025-09-19", "10:30", 55.7558, 37.6173),
-            ("user2", "2025-09-19", "11:15", 59.9343, 30.3351),
-            ("user3", "2025-09-18", "14:00", 56.8389, 60.6057),
-            ("user4", "2025-09-18", "14:00", 46.8013, 31.1307),
-        ]
-        c.executemany("INSERT INTO points (user_id, date, time, lat, lon) VALUES (?, ?, ?, ?, ?)", test_data)
-        conn.commit()
-        conn.close()
-        print("✅ База создана и заполнена тестовыми данными.")
-
-def get_points(user_id=None, date=None, time_from=None, time_to=None):
+def get_points(user_id=None, date_from=None, date_to=None, time_from=None, time_to=None, is_active=None):
+    """
+    Получаем точки с возможностью фильтрации по пользователю(ям), дате, времени и активности.
+    user_id может быть:
+      - None => все пользователи
+      - int => один пользователь
+      - list[int] => несколько пользователей
+    """
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    query = "SELECT user_id, date, time, lat, lon FROM points WHERE 1=1"
+    query = "SELECT id, user_id, date, time, lat, lon, is_active FROM points WHERE 1=1"
     params = []
 
+    # --- Фильтр по пользователям ---
     if user_id:
-        query += " AND user_id = ?"
-        params.append(user_id)
+        if isinstance(user_id, list) and len(user_id) > 0:
+            placeholders = ','.join(['?'] * len(user_id))
+            query += f" AND user_id IN ({placeholders})"
+            params.extend(user_id)
+        else:
+            query += " AND user_id = ?"
+            params.append(user_id)
 
-    if date:
-        query += " AND date = ?"
-        params.append(date)
+    # --- Фильтр по диапазону дат ---
+    if date_from:
+        query += " AND date >= ?"
+        params.append(date_from)
+    if date_to:
+        query += " AND date <= ?"
+        params.append(date_to)
 
+    # --- Фильтр по диапазону времени ---
     if time_from:
         query += " AND time >= ?"
         params.append(time_from)
-
     if time_to:
         query += " AND time <= ?"
         params.append(time_to)
+
+    # --- Фильтр по активности ---
+    if is_active is not None and is_active != "":
+        active_status = int(is_active)
+        query += " AND is_active = ?"
+        params.append(active_status)
+
+    query += " ORDER BY date, time"
 
     c.execute(query, params)
     rows = c.fetchall()
     conn.close()
     return rows
 
-
-def add_point(user_id, date, time, lat, lon):
-    """Добавляем новую точку в БД (для тестов или трекера)."""
+def get_users():
+    """Возвращает список всех пользователей: [(id, name), ...]"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("INSERT INTO points (user_id, date, time, lat, lon) VALUES (?, ?, ?, ?, ?)",
-              (user_id, date, time, lat, lon))
+    c.execute("SELECT id, name FROM users ORDER BY name")
+    users = c.fetchall()
+    conn.close()
+    return users
+
+def add_point(user_id, date, time, lat, lon):
+    """Добавляем новую точку в БД. is_active по умолчанию 1."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO points (user_id, date, time, lat, lon, is_active) VALUES (?, ?, ?, ?, ?, 1)",
+        (user_id, date, time, lat, lon)
+    )
     conn.commit()
     conn.close()
+
+def execute_db_action(action, point_ids):
+    """Выполняет массовые действия над точками (изменение статуса или удаление)."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+
+    placeholders = ', '.join(['?'] * len(point_ids))
+
+    if action == "set_active":
+        sql = f"UPDATE points SET is_active = 1 WHERE id IN ({placeholders})"
+        c.execute(sql, point_ids)
+    elif action == "set_inactive":
+        sql = f"UPDATE points SET is_active = 0 WHERE id IN ({placeholders})"
+        c.execute(sql, point_ids)
+    elif action == "delete":
+        sql = f"DELETE FROM points WHERE id IN ({placeholders})"
+        c.execute(sql, point_ids)
+    else:
+        conn.close()
+        raise ValueError(f"Неизвестное действие: {action}")
+
+    rows_affected = c.rowcount
+    conn.commit()
+    conn.close()
+    return rows_affected
+
