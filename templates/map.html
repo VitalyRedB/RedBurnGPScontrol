@@ -6,20 +6,19 @@
 
 {% block body %}
 
-<!-- Кнопка открытия панели фильтров -->
+<!-- === КНОПКИ УПРАВЛЕНИЯ === -->
 <button id="filter-toggle" class="filter-button">☰</button>
+<button id="line-toggle" class="filter-button" style="top: 120px;">L</button>
 
-<!-- Панель фильтра -->
+<!-- === ПАНЕЛЬ ФИЛЬТРА === -->
 <div id="filter-panel" class="filter-panel">
   <h5>Фильтр точек</h5>
 
-  <!-- Пользователи -->
   <label for="userFilter">Пользователи</label>
   <select id="userFilter" multiple>
     <option value="" selected>Все пользователи</option>
   </select>
 
-  <!-- Дата и время -->
   <label>From date/time</label>
   <input type="date" id="dateFromFilter">
   <input type="time" id="timeFromFilter">
@@ -28,7 +27,6 @@
   <input type="date" id="dateToFilter">
   <input type="time" id="timeToFilter">
 
-  <!-- Статус -->
   <label for="statusFilter">Статус</label>
   <select id="statusFilter">
     <option value="">Все статусы</option>
@@ -39,70 +37,94 @@
   <button onclick="applyFilters()">Найти</button>
 </div>
 
-<!-- Контейнер карты -->
+<!-- === ПАНЕЛЬ ЛИНИЙ === -->
+<div id="line-panel" class="filter-panel">
+  <h5>Объединение точек</h5>
+
+  <label for="lineUser">Пользователь</label>
+  <select id="lineUser">
+    <option value="" selected>Выберите пользователя</option>
+  </select>
+
+  <label>From date</label>
+  <input type="date" id="lineDateFrom">
+  <label>To date</label>
+  <input type="date" id="lineDateTo">
+
+  <button id="mergeLines" class="btn btn-primary mt-2">Объединить</button>
+</div>
+
+<!-- === КАРТА === -->
 <div id="map"></div>
 
-<!-- Leaflet + MarkerCluster -->
+<!-- === Leaflet + MarkerCluster === -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 
-<!-- Ваш CSS -->
+<!-- === CSS === -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/map.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/filter.css') }}">
 
+<!-- === JS === -->
 <script>
-  // --- Toggle панели фильтра ---
+  // --- Панели ---
   const filterToggle = document.getElementById('filter-toggle');
   const filterPanel = document.getElementById('filter-panel');
-  filterToggle.addEventListener('click', () => {
-    filterPanel.classList.toggle('show');
-  });
+  filterToggle.addEventListener('click', () => filterPanel.classList.toggle('show'));
+
+  const lineToggle = document.getElementById('line-toggle');
+  const linePanel = document.getElementById('line-panel');
+  lineToggle.addEventListener('click', () => linePanel.classList.toggle('show'));
 
   // --- Инициализация карты ---
-  const map = L.map('map').setView([55.751244, 37.618423], 10);
+  const map = L.map('map').setView([50.45, 30.52], 10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-
-  // --- Кластеризация ---
   const markersLayer = L.markerClusterGroup().addTo(map);
 
+  // --- Отображение точек ---
   function updateMap(points) {
     markersLayer.clearLayers();
     points.forEach(pt => {
       const marker = L.marker([pt.lat, pt.lon])
-        .bindPopup(`<b>ID:</b> ${pt.id}<br><b>Пользователь:</b> ${pt.user_id}<br><b>Статус:</b> ${pt.is_active ? "Активный" : "Пассивный"}`);
+        .bindPopup(
+          `<b>ID:</b> ${pt.id}<br>
+           <b>Пользователь:</b> ${pt.user_id}<br>
+           <b>Статус:</b> ${pt.is_active ? "Активный" : "Пассивный"}`
+        );
       markersLayer.addLayer(marker);
     });
-    if (points.length > 0) {
-      map.fitBounds(markersLayer.getBounds(), { padding: [50,50] });
-    }
+    if (points.length > 0) map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
   }
 
-  // --- Загрузка всех точек ---
+  // --- Кэш точек ---
+  let allPointsCache = [];
+
   async function loadAllPoints() {
     try {
-      const response = await fetch('/api/points');
-      const data = await response.json();
+      const res = await fetch('/api/points');
+      const data = await res.json();
+      allPointsCache = data;
       updateMap(data);
     } catch (err) {
       console.error("Ошибка при загрузке точек:", err);
     }
   }
 
-  // --- Подгрузка пользователей ---
+  // --- Загрузка пользователей ---
   async function loadUsers() {
     try {
-      const response = await fetch('/api/users');
-      const users = await response.json();
-      const userSelect = document.getElementById('userFilter');
-
+      const res = await fetch('/api/users');
+      const users = await res.json();
+      const userFilter = document.getElementById('userFilter');
+      const lineUser = document.getElementById('lineUser');
       users.forEach(u => {
-        const opt = document.createElement('option');
-        opt.value = u;
-        opt.textContent = u;
-        userSelect.appendChild(opt);
+        const opt1 = new Option(u, u);
+        const opt2 = new Option(u, u);
+        userFilter.appendChild(opt1);
+        lineUser.appendChild(opt2);
       });
     } catch (err) {
       console.error("Ошибка при загрузке пользователей:", err);
@@ -114,13 +136,15 @@
     loadAllPoints();
   });
 
-  // --- Применение фильтров ---
+  // --- Применение фильтра ---
   async function applyFilters() {
     const userSelect = document.getElementById('userFilter');
-    const selectedUsers = Array.from(userSelect.selectedOptions).map(o => o.value).filter(v=>v!=="");
+    const users = Array.from(userSelect.selectedOptions)
+      .map(o => o.value)
+      .filter(v => v !== "");
 
     const params = new URLSearchParams();
-    selectedUsers.forEach(u => params.append('user_id', u));
+    users.forEach(u => params.append('user_id', u));
 
     const dateFrom = document.getElementById('dateFromFilter').value;
     const dateTo = document.getElementById('dateToFilter').value;
@@ -128,23 +152,137 @@
     const timeTo = document.getElementById('timeToFilter').value;
     const status = document.getElementById('statusFilter').value;
 
-    if(dateFrom) params.append('date_from', dateFrom);
-    if(dateTo) params.append('date_to', dateTo);
-    if(timeFrom) params.append('time_from', timeFrom);
-    if(timeTo) params.append('time_to', timeTo);
-    if(status!=="") params.append('is_active', status);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (timeFrom) params.append('time_from', timeFrom);
+    if (timeTo) params.append('time_to', timeTo);
+    if (status !== "") params.append('is_active', status);
 
     try {
-      const response = await fetch('/api/points?' + params.toString());
-      const data = await response.json();
+      const res = await fetch('/api/points?' + params.toString());
+      const data = await res.json();
       updateMap(data);
-    } catch(err) {
+    } catch (err) {
       console.error("Ошибка при фильтрации:", err);
     }
   }
+
+  // --- Объединение точек ---
+  let linesVisible = false;
+  const linesLayer = L.layerGroup().addTo(map);
+  let summaryControl = null;
+
+  async function toggleLinesForUser(userId, dateFrom, dateTo) {
+    const mergeBtn = document.getElementById('mergeLines');
+    const panel = document.getElementById('line-panel');
+
+    // --- Очистка при повторном нажатии ---
+    if (linesVisible) {
+      linesLayer.clearLayers();
+      if (summaryControl) {
+        map.removeControl(summaryControl);
+        summaryControl = null;
+      }
+      const oldSummary = panel.querySelector(".summary");
+      if (oldSummary) oldSummary.remove();
+      updateMap(allPointsCache);
+      mergeBtn.textContent = "Объединить";
+      mergeBtn.style.backgroundColor = "";
+      linesVisible = false;
+      return;
+    }
+
+    if (!userId) return;
+
+    // --- Загружаем точки выбранного пользователя ---
+    const params = new URLSearchParams();
+    params.append('user_id', userId);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+
+    try {
+      const res = await fetch('/api/points?' + params.toString());
+      const data = await res.json();
+      if (data.length === 0) return;
+
+      updateMap(data);
+
+      // --- Группировка по дате ---
+      const pointsByDate = {};
+      data.forEach(pt => {
+        if (!pointsByDate[pt.date]) pointsByDate[pt.date] = [];
+        pointsByDate[pt.date].push(pt);
+      });
+
+      let allLatLngs = [];
+      let totalDistance = 0;
+
+      Object.keys(pointsByDate).forEach(date => {
+        const pts = pointsByDate[date].sort((a,b)=>a.time.localeCompare(b.time));
+        const latlngs = pts.map(p => [p.lat, p.lon]);
+        allLatLngs.push(...latlngs);
+
+        let dist = 0;
+        for (let i = 1; i < latlngs.length; i++) {
+          dist += map.distance(latlngs[i - 1], latlngs[i]);
+        }
+        totalDistance += dist;
+
+        const line = L.polyline(latlngs, { color: 'red', weight: 4 }).addTo(linesLayer);
+        line.on('click', () => {
+          const km = (dist / 1000).toFixed(2);
+          L.popup()
+            .setLatLng(line.getBounds().getCenter())
+            .setContent(`<b>${date}</b><br>Расстояние: ${km} км`)
+            .openOn(map);
+        });
+      });
+
+      if (allLatLngs.length > 0) map.fitBounds(allLatLngs, { padding: [50, 50] });
+
+      // --- Итоговая статистика ---
+      const kmSum = (totalDistance / 1000).toFixed(2);
+      const summaryText = `${userId} — ${data.length} точек, ${kmSum} км`;
+
+      const summaryEl = document.createElement('div');
+      summaryEl.className = 'summary';
+      summaryEl.style.marginTop = '10px';
+      summaryEl.style.fontWeight = 'bold';
+      summaryEl.textContent = summaryText;
+      panel.appendChild(summaryEl);
+
+      summaryControl = L.control({ position: 'topleft' });
+      summaryControl.onAdd = function () {
+        const div = L.DomUtil.create('div', 'leaflet-control-summary');
+        div.style.background = 'rgba(255,255,255,0.9)';
+        div.style.padding = '6px 10px';
+        div.style.borderRadius = '6px';
+        div.style.fontWeight = 'bold';
+        div.innerHTML = summaryText;
+        return div;
+      };
+      summaryControl.addTo(map);
+
+      mergeBtn.textContent = "Отменить";
+      mergeBtn.style.backgroundColor = "blue";
+      linesVisible = true;
+
+    } catch (err) {
+      console.error("Ошибка при построении линий:", err);
+    }
+  }
+
+  document.getElementById('mergeLines').addEventListener('click', () => {
+    const userId = document.getElementById('lineUser').value;
+    const dateFrom = document.getElementById('lineDateFrom').value;
+    const dateTo = document.getElementById('lineDateTo').value;
+    toggleLinesForUser(userId, dateFrom, dateTo);
+  });
 </script>
 
 {% endblock %}
+
+
 
 
 

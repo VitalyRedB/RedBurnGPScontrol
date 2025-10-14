@@ -18,7 +18,7 @@
   cursor: pointer;
 }
 
-.filter-button {
+.filter-button3 {
   position: fixed;         /* ✅ было absolute */
   top: 15px;
   right: 15px;
@@ -31,6 +31,44 @@
   cursor: pointer;
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
 }
+/* === Кнопка ☰ === */
+.filter-button {
+  position: fixed;          /* закреплена на экране */
+  top: 15px;
+  right: 15px;
+  z-index: 2000;            /* выше панели */
+  background: white;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  font-size: 20px;
+  padding: 6px 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Эффект при наведении */
+.filter-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+/* === Кнопка L под фильтром === */
+.line-button {
+  position: absolute;
+  top: 60px; /* под кнопкой фильтра */
+  right: 15px;
+  z-index: 1001;
+  background: white;
+  border: 1px solid #aaa;
+  border-radius: 8px;
+  font-size: 20px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+/* Панель линии использует общий класс filter-panel */
+/* Уже есть стили для .filter-panel с анимацией и выездом */
 
 
 /* Панель фильтра */
