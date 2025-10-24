@@ -1,42 +1,14 @@
-/* Карта */
+/* === КАРТА === */
 #map {
   height: 100vh;
   width: 100%;
 }
 
-/* Кнопка ☰ */
-.filter-button2 {
-  position: absolute;
-  top: 15px;
-  right: 15px;
-  z-index: 1001;
-  background: white;
-  border: 1px solid #aaa;
-  border-radius: 8px;
-  font-size: 20px;
-  padding: 6px 10px;
-  cursor: pointer;
-}
-
-.filter-button3 {
-  position: fixed;         /* ✅ было absolute */
-  top: 15px;
-  right: 15px;
-  z-index: 2000;           /* чуть выше панели фильтра */
-  background: white;
-  border: 1px solid #aaa;
-  border-radius: 8px;
-  font-size: 20px;
-  padding: 6px 10px;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-}
-/* === Кнопка ☰ === */
+/* === КНОПКИ === */
+/* Класс кнопки фильтра (☰) */
 .filter-button {
-  position: fixed;          /* закреплена на экране */
-  top: 15px;
-  right: 15px;
-  z-index: 2000;            /* выше панели */
+  position: fixed;
+  z-index: 2000;
   background: white;
   border: 1px solid #aaa;
   border-radius: 8px;
@@ -46,32 +18,30 @@
   box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-
-/* Эффект при наведении */
 .filter-button:hover {
   transform: scale(1.1);
   box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* === Кнопка L под фильтром === */
+/* Класс кнопки линии (L) */
 .line-button {
-  position: absolute;
-  top: 60px; /* под кнопкой фильтра */
-  right: 15px;
-  z-index: 1001;
+  position: fixed;
+  z-index: 2000;
   background: white;
   border: 1px solid #aaa;
   border-radius: 8px;
   font-size: 20px;
   padding: 6px 10px;
   cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.line-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-/* Панель линии использует общий класс filter-panel */
-/* Уже есть стили для .filter-panel с анимацией и выездом */
-
-
-/* Панель фильтра */
+/* === ПАНЕЛИ === */
 .filter-panel {
   position: fixed;
   background: white;
@@ -83,24 +53,50 @@
   gap: 10px;
   width: 280px;
   transition: transform 0.4s ease;
+  overflow-y: auto;
 }
 
-/* ПК: панель справа */
+/* === ПК (min-width: 769px) === */
 @media (min-width: 769px) {
-  .filter-panel {
+
+  /* Панель фильтра ("3-") справа */
+  #filter-panel {
     top: 0;
     right: 0;
     height: 100vh;
     transform: translateX(100%);
   }
-  .filter-panel.show {
+  #filter-panel.show {
     transform: translateX(0);
+  }
+
+  /* Панель линий ("L") слева */
+  #line-panel {
+    top: 0;
+    left: 0;
+    height: 100vh;
+    transform: translateX(-100%);
+  }
+  #line-panel.show {
+    transform: translateX(0);
+  }
+
+  /* Расположение кнопок */
+  #filter-toggle {
+    top: 15px;
+    right: 15px;
+  }
+  #line-toggle {
+    top: 15px;
+    left: 15px;
   }
 }
 
-/* Мобильные: панель снизу */
+/* === МОБИЛЬНЫЕ (max-width: 768px) === */
 @media (max-width: 768px) {
-  .filter-panel {
+
+  /* Панель фильтра выезжает снизу */
+  #filter-panel {
     bottom: 0;
     left: 0;
     width: 100%;
@@ -109,12 +105,36 @@
     border-top-right-radius: 12px;
     transform: translateY(100%);
   }
-  .filter-panel.show {
+  #filter-panel.show {
     transform: translateY(0);
+  }
+
+  /* Панель линий выезжает снизу */
+  #line-panel {
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: auto;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    transform: translateY(100%);
+  }
+  #line-panel.show {
+    transform: translateY(0);
+  }
+
+  /* Расположение кнопок на мобильных */
+  #filter-toggle {
+    top: 10px;
+    right: 10px;
+  }
+  #line-toggle {
+    top: 10px;
+    left: 10px;
   }
 }
 
-/* Поле пользователя */
+/* === Поля пользователя и даты === */
 #userFilter {
   height: 180px;
   font-size: 14px;
@@ -122,7 +142,6 @@
   box-sizing: border-box;
 }
 
-/* Поля даты и времени */
 #dateFromFilter, #timeFromFilter,
 #dateToFilter, #timeToFilter {
   height: 30px;
@@ -130,6 +149,7 @@
   padding: 2px 5px;
   box-sizing: border-box;
 }
+
 
 
 

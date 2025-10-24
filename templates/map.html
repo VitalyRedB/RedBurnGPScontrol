@@ -8,7 +8,7 @@
 
 <!-- === КНОПКИ УПРАВЛЕНИЯ === -->
 <button id="filter-toggle" class="filter-button">☰</button>
-<button id="line-toggle" class="filter-button" style="top: 120px;">L</button>
+<button id="line-toggle" class="filter-button">L</button>
 
 <!-- === ПАНЕЛЬ ФИЛЬТРА === -->
 <div id="filter-panel" class="filter-panel">
@@ -38,7 +38,7 @@
 
 <!-- === ПАНЕЛЬ ЛИНИЙ (ОБЪЕДИНЕНИЕ ТОЧЕК) === -->
 <div id="line-panel" class="filter-panel">
-  <h5>Объединение точек</h5>
+  <h5 style="text-indent: 40px;">Объединение точек</h5>
   <label for="lineUser">Пользователь</label>
   <select id="lineUser">
     <option value="" selected>Выберите пользователя</option>
@@ -67,93 +67,106 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/filter.css') }}">
 
 <script>
-  // --- Панель фильтра ---
+  // === Панели ===
   const filterToggle = document.getElementById('filter-toggle');
-  const filterPanel = document.getElementById('filter-panel');
-  filterToggle.addEventListener('click', () => filterPanel.classList.toggle('show'));
-
-  // --- Панель линий ---
   const lineToggle = document.getElementById('line-toggle');
+  const filterPanel = document.getElementById('filter-panel');
   const linePanel = document.getElementById('line-panel');
-  lineToggle.addEventListener('click', () => linePanel.classList.toggle('show'));
 
-  // --- Инициализация карты ---
+  // --- Адаптивное открытие ---
+  function togglePanel(panel, otherPanel) {
+    // если в мобильной версии — просто выезжают снизу
+    const isMobile = window.innerWidth <= 768;
+
+    // Если панель уже открыта — закрываем её
+    if (panel.classList.contains('show')) {
+      panel.classList.remove('show');
+    } else {
+      // Закрываем другую панель и открываем эту
+      if (otherPanel) otherPanel.classList.remove('show');
+      panel.classList.add('show');
+    }
+  }
+
+  // --- Обработчики кнопок ---
+  filterToggle.addEventListener('click', () => togglePanel(filterPanel, linePanel));
+  lineToggle.addEventListener('click', () => togglePanel(linePanel, filterPanel));
+
+  // === Инициализация карты ===
   const map = L.map('map').setView([50.45, 30.52], 10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-  // --- Кластеризация ---
+  // === Кластеризация ===
   const markersLayer = L.markerClusterGroup().addTo(map);
+  const linesLayer = L.layerGroup().addTo(map);
 
-  let allPoints = []; // Сохраняем все точки для фильтрации
+  let allPoints = [];
+  let linesVisible = false;
+  let popupGroup = [];
 
+  // === Обновление карты ===
   function updateMap(points) {
     markersLayer.clearLayers();
     points.forEach(pt => {
       const marker = L.marker([pt.lat, pt.lon]);
 
-      // --- bindPopup с кнопкой для запроса адреса ---
       const popupContent = document.createElement('div');
-      popupContent.innerHTML = `<b>ID:</b> ${pt.id}<br>
-                                <b>Пользователь:</b> ${pt.user_id}<br>
-                                <b>Статус:</b> ${pt.is_active ? "Активный" : "Пассивный"}<br>
-                                <b>Дата/Время:</b> ${pt.date} ${pt.time}<br>
-                                <button class="get-address-btn">Показать адрес</button>
-                                <div class="address"></div>`;
+      popupContent.innerHTML = `
+        <b>ID:</b> ${pt.id}<br>
+        <b>Пользователь:</b> ${pt.user_id}<br>
+        <b>Статус:</b> ${pt.is_active ? "Активный" : "Пассивный"}<br>
+        <b>Дата/Время:</b> ${pt.date} ${pt.time}<br>
+        <button class="get-address-btn">Показать адрес</button>
+        <div class="address"></div>
+      `;
       marker.bindPopup(popupContent);
 
-      // --- Событие открытия popup ---
+      // --- при открытии popup ---
       marker.on('popupopen', () => {
         const btn = popupContent.querySelector('.get-address-btn');
         const addrDiv = popupContent.querySelector('.address');
-
         btn.addEventListener('click', async () => {
           addrDiv.innerHTML = "Загрузка...";
           try {
-            // Пример запроса к Nominatim
-            const response = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pt.lat}&lon=${pt.lon}&format=json`);
-            const data = await response.json();
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pt.lat}&lon=${pt.lon}&format=json`);
+            const data = await res.json();
             addrDiv.innerHTML = data.display_name || "Не найдено";
-          } catch(e) {
+          } catch {
             addrDiv.innerHTML = "Ошибка запроса";
           }
-        }, {once:true}); // чтобы кнопка срабатывала один раз
+        }, { once: true });
       });
 
       markersLayer.addLayer(marker);
     });
 
-    if(points.length > 0) map.fitBounds(markersLayer.getBounds(), { padding: [50,50] });
+    if (points.length > 0) map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
   }
 
-  // --- Загрузка всех точек ---
+  // === Загрузка точек ===
   async function loadAllPoints() {
     try {
-      const response = await fetch('/api/points');
-      allPoints = await response.json();
+      const res = await fetch('/api/points');
+      allPoints = await res.json();
       updateMap(allPoints);
     } catch (err) {
       console.error("Ошибка при загрузке точек:", err);
     }
   }
 
-  // --- Загрузка пользователей ---
+  // === Загрузка пользователей ===
   async function loadUsers() {
     try {
-      const response = await fetch('/api/users');
-      const users = await response.json();
+      const res = await fetch('/api/users');
+      const users = await res.json();
       const userSelect = document.getElementById('userFilter');
       const lineUserSelect = document.getElementById('lineUser');
 
       users.forEach(u => {
-        const opt1 = document.createElement('option');
-        opt1.value = u;
-        opt1.textContent = u;
-        userSelect.appendChild(opt1);
-
-        const opt2 = document.createElement('option');
-        opt2.value = u;
-        opt2.textContent = u;
-        lineUserSelect.appendChild(opt2);
+        const opt1 = new Option(u, u);
+        const opt2 = new Option(u, u);
+        userSelect.add(opt1);
+        lineUserSelect.add(opt2);
       });
     } catch (err) {
       console.error("Ошибка при загрузке пользователей:", err);
@@ -165,115 +178,99 @@
     loadAllPoints();
   });
 
-  // --- Применение фильтров ---
+  // === Фильтры ===
   async function applyFilters() {
-    const userSelect = document.getElementById('userFilter');
-    const selectedUsers = Array.from(userSelect.selectedOptions)
+    const selectedUsers = Array.from(document.getElementById('userFilter').selectedOptions)
       .map(o => o.value)
       .filter(v => v !== "");
 
     const params = new URLSearchParams();
     selectedUsers.forEach(u => params.append('user_id', u));
 
-    const dateFrom = document.getElementById('dateFromFilter').value;
-    const dateTo = document.getElementById('dateToFilter').value;
-    const timeFrom = document.getElementById('timeFromFilter').value;
-    const timeTo = document.getElementById('timeToFilter').value;
-    const status = document.getElementById('statusFilter').value;
+    const fields = [
+      ['date_from', 'dateFromFilter'],
+      ['date_to', 'dateToFilter'],
+      ['time_from', 'timeFromFilter'],
+      ['time_to', 'timeToFilter']
+    ];
 
-    if(dateFrom) params.append('date_from', dateFrom);
-    if(dateTo) params.append('date_to', dateTo);
-    if(timeFrom) params.append('time_from', timeFrom);
-    if(timeTo) params.append('time_to', timeTo);
-    if(status !== "") params.append('is_active', status);
+    for (const [param, id] of fields) {
+      const val = document.getElementById(id).value;
+      if (val) params.append(param, val);
+    }
+
+    const status = document.getElementById('statusFilter').value;
+    if (status !== "") params.append('is_active', status);
 
     try {
-      const response = await fetch('/api/points?' + params.toString());
-      const data = await response.json();
+      const res = await fetch('/api/points?' + params.toString());
+      const data = await res.json();
       updateMap(data);
-    } catch(err) {
+    } catch (err) {
       console.error("Ошибка при фильтрации:", err);
     }
   }
 
-  // --- Построение линий между точками ---
-  let linesVisible = false;
-  const linesLayer = L.layerGroup().addTo(map);
-  let popupGroup = [];
-
+  // === Построение линий ===
   async function toggleLinesForUser(userId, dateFrom, dateTo) {
     const mergeBtn = document.getElementById('mergeLines');
 
     if (linesVisible) {
-      // --- Отключение режима объединения ---
+      // выключаем режим
       linesLayer.clearLayers();
       popupGroup.forEach(p => map.removeLayer(p));
       popupGroup = [];
       linesVisible = false;
       mergeBtn.textContent = "Объединить";
       mergeBtn.style.backgroundColor = "";
-      updateMap(allPoints); // Показываем все точки
+      updateMap(allPoints);
       return;
     }
 
     if (!userId) return;
 
-    const params = new URLSearchParams();
-    params.append('user_id', userId);
+    const params = new URLSearchParams({ user_id: userId });
     if (dateFrom) params.append('date_from', dateFrom);
     if (dateTo) params.append('date_to', dateTo);
 
     try {
-      const response = await fetch('/api/points?' + params.toString());
-      const data = await response.json();
+      const res = await fetch('/api/points?' + params.toString());
+      const data = await res.json();
       if (data.length === 0) return;
 
-      // Показываем только точки выбранного пользователя
       updateMap(data);
 
-      // --- Группируем по дате и строим линии ---
       const pointsByDate = {};
       data.forEach(pt => {
-        if (!pointsByDate[pt.date]) pointsByDate[pt.date] = [];
-        pointsByDate[pt.date].push(pt);
+        (pointsByDate[pt.date] ||= []).push(pt);
       });
 
-      let totalDistance = 0;
-      let totalPoints = 0;
-
       Object.keys(pointsByDate).forEach(date => {
-        const dayPoints = pointsByDate[date].sort((a,b)=>a.time.localeCompare(b.time));
-        const latlngs = dayPoints.map(p=>[p.lat,p.lon]);
+        const dayPoints = pointsByDate[date].sort((a, b) => a.time.localeCompare(b.time));
+        const latlngs = dayPoints.map(p => [p.lat, p.lon]);
 
-        // Добавляем линию
         const line = L.polyline(latlngs, { color: 'red', weight: 4 }).addTo(linesLayer);
 
-        // Считаем расстояние
         let dist = 0;
-        for (let i=1; i<latlngs.length; i++) dist += map.distance(latlngs[i-1], latlngs[i]);
-        dist /= 1000; // км
-        totalDistance += dist;
-        totalPoints += dayPoints.length;
+        for (let i = 1; i < latlngs.length; i++) dist += map.distance(latlngs[i - 1], latlngs[i]);
+        dist /= 1000;
 
-        // Popup с расстоянием
         const popup = L.popup({ closeButton: false, autoClose: false })
           .setLatLng(line.getBounds().getCenter())
-          .setContent(`${userId} - ${dayPoints.length} points, ${dist.toFixed(2)} km`)
+          .setContent(`${userId} — ${dayPoints.length} точек, ${dist.toFixed(2)} км`)
           .openOn(map);
         popupGroup.push(popup);
       });
 
-      // --- Обновляем кнопку ---
       mergeBtn.textContent = "Отменить";
       mergeBtn.style.backgroundColor = "blue";
       linesVisible = true;
-
     } catch (err) {
       console.error("Ошибка при построении линий:", err);
     }
   }
 
-  // --- Кнопка объединения ---
+  // === Кнопка объединения ===
   const mergeBtn = document.getElementById('mergeLines');
   mergeBtn.addEventListener('click', () => {
     const userId = document.getElementById('lineUser').value;
@@ -281,8 +278,8 @@
     const dateTo = document.getElementById('lineDateTo').value;
     toggleLinesForUser(userId, dateFrom, dateTo);
   });
-
 </script>
+
 
 {% endblock %}
 
