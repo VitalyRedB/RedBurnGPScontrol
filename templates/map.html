@@ -9,6 +9,7 @@
 <!-- === КНОПКИ УПРАВЛЕНИЯ === -->
 <button id="filter-toggle" class="filter-button">☰</button>
 <button id="line-toggle" class="filter-button">L</button>
+<button id="admin-btn" class="filter-button">A</button>
 
 <!-- === ПАНЕЛЬ ФИЛЬТРА === -->
 <div id="filter-panel" class="filter-panel">
@@ -18,27 +19,32 @@
     <option value="" selected>Все пользователи</option>
   </select>
 
-  <label>From date/time</label>
-  <input type="date" id="dateFromFilter">
-  <input type="time" id="timeFromFilter">
+  <label>From date/time  → To date/time</label>
+  <div class="date-time-container">
+    <div class="date-time-block">
+      <input type="date" id="dateFromFilter">
+      <input type="time" id="timeFromFilter">
+    </div>
+    <div class="date-time-block">
+      <input type="date" id="dateToFilter">
+      <input type="time" id="timeToFilter">
+    </div>
+  </div>
 
-  <label>To date/time</label>
-  <input type="date" id="dateToFilter">
-  <input type="time" id="timeToFilter">
-
-  <label for="statusFilter">Статус</label>
+  <label for="statusFilter">Status points</label>
   <select id="statusFilter">
-    <option value="">Все статусы</option>
-    <option value="1">Активные</option>
-    <option value="0">Пассивные</option>
+    <option value="">All points</option>
+    <option value="1">Active points</option>
+    <option value="0">Passive points</option>
   </select>
 
-  <button onclick="applyFilters()">Найти</button>
+  <button onclick="applyFilters()" class="btn btn-primary mt-2">Найти</button>
 </div>
 
-<!-- === ПАНЕЛЬ ЛИНИЙ (ОБЪЕДИНЕНИЕ ТОЧЕК) === -->
+<!-- === ПАНЕЛЬ ЛИНИЙ === -->
 <div id="line-panel" class="filter-panel">
-  <h5 style="text-indent: 40px;">Объединение точек</h5>
+  <h5>_______________in line</h5>
+  <h5>Объединение точек</h5>
   <label for="lineUser">Пользователь</label>
   <select id="lineUser">
     <option value="" selected>Выберите пользователя</option>
@@ -50,6 +56,15 @@
   <input type="date" id="lineDateTo">
 
   <button id="mergeLines" class="btn btn-primary mt-2">Объединить</button>
+</div>
+
+<!-- === ПАНЕЛЬ АДМИНИСТРАТОРА === -->
+<div id="admin-panel" class="filter-panel">
+  <h5>Админ-панель</h5>
+  <button id="select-all-btn" class="action-btn">Select All points</button>
+  <button id="change-status-btn" class="btn btn-primary mt-2">Change status</button>
+  <button id="delete-btn" class="btn btn-primary mt-2">Delete points</button>
+  <button id="send-report-btn" class="btn btn-primary mt-2" disabled>Send report</button>
 </div>
 
 <!-- === КАРТА === -->
@@ -67,61 +82,101 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='css/filter.css') }}">
 
 <script>
-  // === Панели ===
+  // ===================================================
+  // === 1. ПАНЕЛИ ФИЛЬТРА, ЛИНИЙ И АДМИНА ============
+  // ===================================================
   const filterToggle = document.getElementById('filter-toggle');
   const lineToggle = document.getElementById('line-toggle');
+  const adminBtn = document.getElementById('admin-btn');
+
   const filterPanel = document.getElementById('filter-panel');
   const linePanel = document.getElementById('line-panel');
+  const adminPanel = document.getElementById('admin-panel');
 
-  // --- Адаптивное открытие ---
-  function togglePanel(panel, otherPanel) {
-    // если в мобильной версии — просто выезжают снизу
-    const isMobile = window.innerWidth <= 768;
-
-    // Если панель уже открыта — закрываем её
+  function togglePanel(panel, otherPanels) {
+    if (!Array.isArray(otherPanels)) otherPanels = [otherPanels].filter(Boolean);
     if (panel.classList.contains('show')) {
       panel.classList.remove('show');
     } else {
-      // Закрываем другую панель и открываем эту
-      if (otherPanel) otherPanel.classList.remove('show');
+      otherPanels.forEach(p => p.classList.remove('show'));
       panel.classList.add('show');
     }
   }
 
-  // --- Обработчики кнопок ---
-  filterToggle.addEventListener('click', () => togglePanel(filterPanel, linePanel));
-  lineToggle.addEventListener('click', () => togglePanel(linePanel, filterPanel));
+  filterToggle.addEventListener('click', () => togglePanel(filterPanel, [linePanel, adminPanel]));
+  lineToggle.addEventListener('click', () => togglePanel(linePanel, [filterPanel, adminPanel]));
+  adminBtn.addEventListener('click', () => togglePanel(adminPanel, [filterPanel, linePanel]));
 
-  // === Инициализация карты ===
+  // ===================================================
+  // === 2. КАРТА LEAFLET ===============================
+  // ===================================================
   const map = L.map('map').setView([50.45, 30.52], 10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
-  // === Кластеризация ===
   const markersLayer = L.markerClusterGroup().addTo(map);
   const linesLayer = L.layerGroup().addTo(map);
 
-  let allPoints = [];
+  let allPoints = [];           // все точки на карте (после фильтрации)
+  let selectedPoints = [];      // выбранные пользователем точки
   let linesVisible = false;
   let popupGroup = [];
 
-  // === Обновление карты ===
+  // === Иконки ===
+//  const activeIcon = L.icon({ iconUrl: '/static/icons/green.png', iconSize: [25, 41], iconAnchor: [12, 41] });
+//  const passiveIcon = L.icon({ iconUrl: '/static/icons/red.png', iconSize: [25, 41], iconAnchor: [12, 41] });
+//  const selectedIcon = L.icon({ iconUrl: '/static/icons/yellow.png', iconSize: [25, 41], iconAnchor: [12, 41] });
+
+    // === Иконки ===
+  const activeIcon = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  });
+
+  const passiveIcon = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  });
+
+  const selectedIcon = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-yellow.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  });
+
+
+  // ===================================================
+  // === 3. ОТОБРАЖЕНИЕ ТОЧЕК НА КАРТЕ =================
+  // ===================================================
   function updateMap(points) {
     markersLayer.clearLayers();
+
     points.forEach(pt => {
-      const marker = L.marker([pt.lat, pt.lon]);
+      const marker = L.marker([pt.lat, pt.lon], { icon: pt.status===1 ? activeIcon : passiveIcon });
+      pt.marker = marker; // связываем маркер с объектом точки
 
       const popupContent = document.createElement('div');
       popupContent.innerHTML = `
         <b>ID:</b> ${pt.id}<br>
         <b>Пользователь:</b> ${pt.user_id}<br>
-        <b>Статус:</b> ${pt.is_active ? "Активный" : "Пассивный"}<br>
+        <b>Статус:</b> ${pt.status===1 ? "Активный" : "Пассивный"}<br>
         <b>Дата/Время:</b> ${pt.date} ${pt.time}<br>
         <button class="get-address-btn">Показать адрес</button>
         <div class="address"></div>
       `;
       marker.bindPopup(popupContent);
 
-      // --- при открытии popup ---
+      // Показ адреса
       marker.on('popupopen', () => {
         const btn = popupContent.querySelector('.get-address-btn');
         const addrDiv = popupContent.querySelector('.address');
@@ -131,46 +186,53 @@
             const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pt.lat}&lon=${pt.lon}&format=json`);
             const data = await res.json();
             addrDiv.innerHTML = data.display_name || "Не найдено";
-          } catch {
-            addrDiv.innerHTML = "Ошибка запроса";
-          }
+          } catch { addrDiv.innerHTML = "Ошибка запроса"; }
         }, { once: true });
+      });
+
+      // === Выбор точки вручную ===
+      marker.on('click', () => {
+        const index = selectedPoints.findIndex(p => p.id === pt.id);
+        if (index >= 0) {
+          // снимаем выбор
+          selectedPoints.splice(index, 1);
+          pt.marker.setIcon(pt.status===1 ? activeIcon : passiveIcon);
+        } else {
+          // выбираем и подсвечиваем
+          selectedPoints.push(pt);
+          pt.marker.setIcon(selectedIcon);
+        }
       });
 
       markersLayer.addLayer(marker);
     });
 
+    allPoints = points; // обновляем массив видимых точек
     if (points.length > 0) map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
   }
 
-  // === Загрузка точек ===
+  // ===================================================
+  // === 4. ЗАГРУЗКА ТОЧЕК И ПОЛЬЗОВАТЕЛЕЙ ============
+  // ===================================================
   async function loadAllPoints() {
     try {
       const res = await fetch('/api/points');
-      allPoints = await res.json();
-      updateMap(allPoints);
-    } catch (err) {
-      console.error("Ошибка при загрузке точек:", err);
-    }
+      const data = await res.json();
+      updateMap(data);
+    } catch (err) { console.error(err); }
   }
 
-  // === Загрузка пользователей ===
   async function loadUsers() {
     try {
       const res = await fetch('/api/users');
       const users = await res.json();
       const userSelect = document.getElementById('userFilter');
       const lineUserSelect = document.getElementById('lineUser');
-
       users.forEach(u => {
-        const opt1 = new Option(u, u);
-        const opt2 = new Option(u, u);
-        userSelect.add(opt1);
-        lineUserSelect.add(opt2);
+        userSelect.add(new Option(u, u));
+        lineUserSelect.add(new Option(u, u));
       });
-    } catch (err) {
-      console.error("Ошибка при загрузке пользователей:", err);
-    }
+    } catch (err) { console.error(err); }
   }
 
   window.addEventListener('DOMContentLoaded', () => {
@@ -178,26 +240,20 @@
     loadAllPoints();
   });
 
-  // === Фильтры ===
+  // ===================================================
+  // === 5. ФИЛЬТРЫ ================================
+  // ===================================================
   async function applyFilters() {
     const selectedUsers = Array.from(document.getElementById('userFilter').selectedOptions)
-      .map(o => o.value)
-      .filter(v => v !== "");
+      .map(o => o.value).filter(v => v!=="");
 
     const params = new URLSearchParams();
     selectedUsers.forEach(u => params.append('user_id', u));
 
-    const fields = [
-      ['date_from', 'dateFromFilter'],
-      ['date_to', 'dateToFilter'],
-      ['time_from', 'timeFromFilter'],
-      ['time_to', 'timeToFilter']
-    ];
-
-    for (const [param, id] of fields) {
-      const val = document.getElementById(id).value;
-      if (val) params.append(param, val);
-    }
+    ['dateFromFilter','dateToFilter','timeFromFilter','timeToFilter'].forEach(id => {
+      const val = document.getElementById(id)?.value;
+      if (val) params.append(id, val);
+    });
 
     const status = document.getElementById('statusFilter').value;
     if (status !== "") params.append('is_active', status);
@@ -206,17 +262,22 @@
       const res = await fetch('/api/points?' + params.toString());
       const data = await res.json();
       updateMap(data);
-    } catch (err) {
-      console.error("Ошибка при фильтрации:", err);
-    }
+    } catch (err) { console.error(err); }
   }
 
-  // === Построение линий ===
-  async function toggleLinesForUser(userId, dateFrom, dateTo) {
-    const mergeBtn = document.getElementById('mergeLines');
+  // ===================================================
+  // === 6. ЛИНИИ ================================
+  // ===================================================
+  const mergeBtn = document.getElementById('mergeLines');
+  mergeBtn.addEventListener('click', () => {
+    const userId = document.getElementById('lineUser').value;
+    const dateFrom = document.getElementById('lineDateFrom').value;
+    const dateTo = document.getElementById('lineDateTo').value;
+    toggleLinesForUser(userId, dateFrom, dateTo);
+  });
 
+  async function toggleLinesForUser(userId, dateFrom, dateTo) {
     if (linesVisible) {
-      // выключаем режим
       linesLayer.clearLayers();
       popupGroup.forEach(p => map.removeLayer(p));
       popupGroup = [];
@@ -226,7 +287,6 @@
       updateMap(allPoints);
       return;
     }
-
     if (!userId) return;
 
     const params = new URLSearchParams({ user_id: userId });
@@ -236,52 +296,148 @@
     try {
       const res = await fetch('/api/points?' + params.toString());
       const data = await res.json();
-      if (data.length === 0) return;
+      if (!data.length) return;
 
       updateMap(data);
 
       const pointsByDate = {};
-      data.forEach(pt => {
-        (pointsByDate[pt.date] ||= []).push(pt);
-      });
-
+      data.forEach(pt => (pointsByDate[pt.date] ||= []).push(pt));
       Object.keys(pointsByDate).forEach(date => {
-        const dayPoints = pointsByDate[date].sort((a, b) => a.time.localeCompare(b.time));
-        const latlngs = dayPoints.map(p => [p.lat, p.lon]);
-
-        const line = L.polyline(latlngs, { color: 'red', weight: 4 }).addTo(linesLayer);
-
-        let dist = 0;
-        for (let i = 1; i < latlngs.length; i++) dist += map.distance(latlngs[i - 1], latlngs[i]);
-        dist /= 1000;
-
-        const popup = L.popup({ closeButton: false, autoClose: false })
+        const dayPoints = pointsByDate[date].sort((a,b)=>a.time.localeCompare(b.time));
+        const latlngs = dayPoints.map(p=>[p.lat,p.lon]);
+        const line = L.polyline(latlngs,{color:'red',weight:4}).addTo(linesLayer);
+        let dist=0; for(let i=1;i<latlngs.length;i++) dist+=map.distance(latlngs[i-1],latlngs[i]); dist/=1000;
+        const popup = L.popup({closeButton:false,autoClose:false})
           .setLatLng(line.getBounds().getCenter())
           .setContent(`${userId} — ${dayPoints.length} точек, ${dist.toFixed(2)} км`)
           .openOn(map);
         popupGroup.push(popup);
       });
 
-      mergeBtn.textContent = "Отменить";
-      mergeBtn.style.backgroundColor = "blue";
-      linesVisible = true;
-    } catch (err) {
-      console.error("Ошибка при построении линий:", err);
-    }
+      mergeBtn.textContent="Отменить";
+      mergeBtn.style.backgroundColor="blue";
+      linesVisible=true;
+    } catch(err){console.error(err);}
   }
 
-  // === Кнопка объединения ===
-  const mergeBtn = document.getElementById('mergeLines');
-  mergeBtn.addEventListener('click', () => {
-    const userId = document.getElementById('lineUser').value;
-    const dateFrom = document.getElementById('lineDateFrom').value;
-    const dateTo = document.getElementById('lineDateTo').value;
-    toggleLinesForUser(userId, dateFrom, dateTo);
+  // ===================================================
+  // === 7. ПАНЕЛЬ АДМИНИСТРАТОРА ====================
+  // ===================================================
+  // === 7.1 Select All points ===
+  // ===================================================
+// === 7. ПАНЕЛЬ АДМИНИСТРАТОРА ====================
+// ===================================================
+
+// === 7.1 Выделение всех точек ===
+let allSelected = false;
+const selectAllBtn = document.getElementById('select-all-btn');
+
+selectAllBtn.addEventListener('click', () => {
+  if (!allSelected) {
+    // ✅ выбрать все активные точки
+    selectedPoints = [...allPoints];
+    selectedPoints.forEach(pt => pt.marker?.setIcon(selectedIcon));
+    selectAllBtn.style.backgroundColor = "green";
+  } else {
+    // 🔄 снять выделение
+    selectedPoints.forEach(pt => pt.marker?.setIcon(pt.status === 1 ? activeIcon : passiveIcon));
+    selectedPoints = [];
+    selectAllBtn.style.backgroundColor = "";
+  }
+  allSelected = !allSelected;
+});
+
+// === 7.2 Смена статуса выбранных точек ===
+let toggleToPassive = true; // первая смена -> делаем пассивными
+const changeStatusBtn = document.getElementById('change-status-btn');
+
+changeStatusBtn.addEventListener('click', async () => {
+  if (!selectedPoints.length) {
+    alert("No points selected.");
+    return;
+  }
+
+  // Меняем статус в UI
+  selectedPoints.forEach(pt => {
+    pt.status = toggleToPassive ? 0 : 1;
+    pt.marker?.setIcon(pt.status === 1 ? activeIcon : passiveIcon);
   });
+
+  // Отправляем изменения на сервер
+  try {
+    const res = await fetch('/change_status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ids: selectedPoints.map(p => p.id),
+        new_status: toggleToPassive ? 0 : 1
+      })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert("Error updating status.");
+    }
+  } catch {
+    alert("Server error while changing status.");
+  }
+
+  // Переключаем направление для следующего нажатия
+  toggleToPassive = !toggleToPassive;
+
+  // Снимаем выделение и сбрасываем цвет кнопок
+  selectedPoints.forEach(pt => pt.marker?.setIcon(pt.status === 1 ? activeIcon : passiveIcon));
+  selectedPoints = [];
+  allSelected = false;
+  selectAllBtn.style.backgroundColor = "";
+});
+
+// === 7.3 Удаление выбранных точек ===
+const deleteBtn = document.getElementById('delete-btn');
+
+deleteBtn.addEventListener('click', async () => {
+  if (!selectedPoints.length) {
+    alert("No points selected.");
+    return;
+  }
+
+  // Проверяем, что все пассивные
+  if (!selectedPoints.every(pt => pt.status === 0)) {
+    alert("You can only delete points with PASSIVE status.");
+    return;
+  }
+
+  if (!confirm("Are you sure you want to delete these points?")) return;
+
+  try {
+    const res = await fetch('/delete_points', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: selectedPoints.map(p => p.id) })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      // Удаляем с карты и из памяти
+      selectedPoints.forEach(pt => map.removeLayer(pt.marker));
+      selectedPoints = [];
+      allSelected = false;
+      selectAllBtn.style.backgroundColor = "";
+      alert("Points deleted successfully.");
+    } else {
+      alert("Error deleting points.");
+    }
+  } catch {
+    alert("Server error while deleting points.");
+  }
+});
+
+
+
 </script>
 
 
 {% endblock %}
+
 
 
 

@@ -120,6 +120,58 @@ def api_execute_action():
         print(f"Ошибка при выполнении действия: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
+
+
+# Новый маршрут 25_10_2025 - удаление ТТ и замена статуса
+@app.route('/delete_points', methods=['POST'])
+def delete_points():
+    data = request.get_json()
+    ids = data.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'error': 'No IDs provided'})
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cur = conn.cursor()
+        cur.executemany("DELETE FROM points WHERE id = ?", [(i,) for i in ids])
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        print("Error in /delete_points:", e)
+        return jsonify({'success': False, 'error': str(e)})
+
+# Новый маршрут 25_10_2025 - удаление ТТ и замена статуса
+@app.route('/change_status', methods=['POST'])
+def change_status():
+    data = request.get_json()
+    ids = data.get('ids', [])
+    if not ids:
+        return jsonify({'success': False, 'error': 'No IDs provided'})
+
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cur = conn.cursor()
+
+        placeholders = ','.join(['?'] * len(ids))
+        cur.execute(f"""
+            UPDATE points
+            SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END
+            WHERE id IN ({placeholders})
+        """, ids)
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({'success': True})
+
+    except Exception as e:
+        print("Error in /change_status:", e)
+        return jsonify({'success': False, 'error': str(e)})
+
+
+
 if __name__ == "__main__":
     app.run(debug=True)
 

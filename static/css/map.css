@@ -40,3 +40,13 @@ html, body {
         gap: 8px;
     }
 }
+
+/* Фиксированная высота и скролл для множественного выбора */
+#userFilter {
+  height: calc(1.5em * 3 + 6px); /* примерно 3 строки */
+  overflow-y: auto;
+  font-size: 14px;
+  padding: 4px 6px;
+  box-sizing: border-box;
+}
+
