@@ -70,12 +70,21 @@
 <!-- === КАРТА === -->
 <div id="map"></div>
 
+<!-- === ЛЕГЕНДА ЦВЕТОВ === -->
+<div id="legend" class="map-legend">
+  <b>Legend:</b><br>
+  🟢 Active points<br>
+  🔴 Passive points<br>
+  🟡 Selected points
+</div>
+
 <!-- === Leaflet + MarkerCluster === -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
 
 <!-- === CSS === -->
 <link rel="stylesheet" href="{{ url_for('static', filename='css/map.css') }}">
@@ -243,27 +252,34 @@
   // ===================================================
   // === 5. ФИЛЬТРЫ ================================
   // ===================================================
-  async function applyFilters() {
-    const selectedUsers = Array.from(document.getElementById('userFilter').selectedOptions)
-      .map(o => o.value).filter(v => v!=="");
+    async function applyFilters() {
+      const selectedUsers = Array.from(document.getElementById('userFilter').selectedOptions)
+        .map(o => o.value).filter(v => v !== "");
 
-    const params = new URLSearchParams();
-    selectedUsers.forEach(u => params.append('user_id', u));
+      const params = new URLSearchParams();
+      selectedUsers.forEach(u => params.append('user_id', u));
 
-    ['dateFromFilter','dateToFilter','timeFromFilter','timeToFilter'].forEach(id => {
-      const val = document.getElementById(id)?.value;
-      if (val) params.append(id, val);
-    });
+      const dateFrom = document.getElementById('dateFromFilter').value;
+      const dateTo = document.getElementById('dateToFilter').value;
+      const timeFrom = document.getElementById('timeFromFilter').value;
+      const timeTo = document.getElementById('timeToFilter').value;
 
-    const status = document.getElementById('statusFilter').value;
-    if (status !== "") params.append('is_active', status);
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      if (timeFrom) params.append('time_from', timeFrom);
+      if (timeTo) params.append('time_to', timeTo);
 
-    try {
-      const res = await fetch('/api/points?' + params.toString());
-      const data = await res.json();
-      updateMap(data);
-    } catch (err) { console.error(err); }
-  }
+      const status = document.getElementById('statusFilter').value;
+      if (status !== "") params.append('is_active', status);
+
+      try {
+        const res = await fetch('/api/points?' + params.toString());
+        const data = await res.json();
+        updateMap(data);
+      } catch (err) {
+        console.error(err);
+      }
+    }
 
   // ===================================================
   // === 6. ЛИНИИ ================================

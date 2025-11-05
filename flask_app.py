@@ -1,3 +1,5 @@
+#/home/RedBurnGPScontrol/mysite/flask_app.py
+
 from flask import Flask, jsonify, render_template, request
 from db import get_points, get_users, execute_db_action
 from add_point import handle_add_point
