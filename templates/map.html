@@ -56,6 +56,7 @@
   <input type="date" id="lineDateTo">
 
   <button id="mergeLines" class="btn btn-primary mt-2">Объединить</button>
+  <div id="total-distance" style="margin-top:10px; font-weight:bold; color:blue;"></div>
 </div>
 
 <!-- === ПАНЕЛЬ АДМИНИСТРАТОРА === -->
@@ -122,6 +123,7 @@
   const map = L.map('map').setView([50.45, 30.52], 10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
 
+  // MarkerClusterGroup - маркеры добавляем сюда
   const markersLayer = L.markerClusterGroup().addTo(map);
   const linesLayer = L.layerGroup().addTo(map);
 
@@ -130,12 +132,7 @@
   let linesVisible = false;
   let popupGroup = [];
 
-  // === Иконки ===
-//  const activeIcon = L.icon({ iconUrl: '/static/icons/green.png', iconSize: [25, 41], iconAnchor: [12, 41] });
-//  const passiveIcon = L.icon({ iconUrl: '/static/icons/red.png', iconSize: [25, 41], iconAnchor: [12, 41] });
-//  const selectedIcon = L.icon({ iconUrl: '/static/icons/yellow.png', iconSize: [25, 41], iconAnchor: [12, 41] });
-
-    // === Иконки ===
+  // === Иконки (используем CDN-цветные маркеры, чтобы избежать проблем с локальными файлами) ===
   const activeIcon = L.icon({
     iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
     shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
@@ -163,61 +160,132 @@
     shadowSize: [41, 41]
   });
 
-
   // ===================================================
   // === 3. ОТОБРАЖЕНИЕ ТОЧЕК НА КАРТЕ =================
   // ===================================================
   function updateMap(points) {
+    // Очищаем слой кластеров и локальные структуры
     markersLayer.clearLayers();
+    window.pointMarkers = []; // храним объекты точек с маркером
+    selectedPoints = [];
+
+    // Сохраняем видимые точки (нужно для Select All и др.)
+    allPoints = points;
+
+    // Разрешение выбора: только если выбран один статус (1 или 0)
+    const statusFilter = document.getElementById('statusFilter').value;
+    const allowSelection = (statusFilter === "1" || statusFilter === "0");
 
     points.forEach(pt => {
-      const marker = L.marker([pt.lat, pt.lon], { icon: pt.status===1 ? activeIcon : passiveIcon });
-      pt.marker = marker; // связываем маркер с объектом точки
+      // Используем поле is_active от сервера
+      // NOTE: в старом коде было поле status — теперь требую is_active везде
+      const icon = (pt.is_active === 1 || pt.is_active === true) ? activeIcon : passiveIcon;
 
+      // Создаём маркер и добавляем в кластер
+      const marker = L.marker([pt.lat, pt.lon], { icon });
+      marker.addTo(markersLayer);
+
+      // Связываем маркер и точку
+      pt.marker = marker;
+      window.pointMarkers.push(pt);
+
+      // === POPUP ===
       const popupContent = document.createElement('div');
+      popupContent.classList.add('popup-content');
       popupContent.innerHTML = `
-        <b>ID:</b> ${pt.id}<br>
         <b>Пользователь:</b> ${pt.user_id}<br>
-        <b>Статус:</b> ${pt.status===1 ? "Активный" : "Пассивный"}<br>
-        <b>Дата/Время:</b> ${pt.date} ${pt.time}<br>
+        <b>Дата:</b> ${pt.date} ${pt.time}<br>
+        <b>Статус:</b> ${(pt.is_active === 1 || pt.is_active === true) ? "Активный" : "Пассивный"}<br>
         <button class="get-address-btn">Показать адрес</button>
+        <button class="change-status-btn">Изменить статус</button>
         <div class="address"></div>
       `;
+
       marker.bindPopup(popupContent);
 
-      // Показ адреса
-      marker.on('popupopen', () => {
-        const btn = popupContent.querySelector('.get-address-btn');
-        const addrDiv = popupContent.querySelector('.address');
-        btn.addEventListener('click', async () => {
-          addrDiv.innerHTML = "Загрузка...";
-          try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pt.lat}&lon=${pt.lon}&format=json`);
-            const data = await res.json();
-            addrDiv.innerHTML = data.display_name || "Не найдено";
-          } catch { addrDiv.innerHTML = "Ошибка запроса"; }
-        }, { once: true });
-      });
-
-      // === Выбор точки вручную ===
+      // === ОБРАБОТКА ВЫБОРА ===
       marker.on('click', () => {
-        const index = selectedPoints.findIndex(p => p.id === pt.id);
-        if (index >= 0) {
-          // снимаем выбор
-          selectedPoints.splice(index, 1);
-          pt.marker.setIcon(pt.status===1 ? activeIcon : passiveIcon);
+        // Если показаны все точки — выбирание отключено, просто открываем popup
+        if (!allowSelection) {
+          marker.openPopup();
+          return;
+        }
+
+        const idx = selectedPoints.findIndex(p => p.id === pt.id);
+        if (idx >= 0) {
+          // снять выделение
+          selectedPoints.splice(idx, 1);
+          marker.setIcon((pt.is_active === 1 || pt.is_active === true) ? activeIcon : passiveIcon);
         } else {
-          // выбираем и подсвечиваем
+          // добавить выделение
           selectedPoints.push(pt);
-          pt.marker.setIcon(selectedIcon);
+          marker.setIcon(selectedIcon);
         }
       });
 
-      markersLayer.addLayer(marker);
+      // === КНОПКИ POPUP ===
+      marker.on('popupopen', () => {
+        const addrBtn = popupContent.querySelector('.get-address-btn');
+        const changeBtn = popupContent.querySelector('.change-status-btn');
+        const addrDiv = popupContent.querySelector('.address');
+
+        // Показ адреса напрямую через OpenStreetMap Nominatim
+        if (addrBtn) {
+          addrBtn.addEventListener('click', async () => {
+            addrDiv.textContent = "Поиск адреса...";
+            try {
+              const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pt.lat}&lon=${pt.lon}&format=json&accept-language=ru`);
+              const data = await res.json();
+              addrDiv.textContent = data.display_name || "Адрес не найден";
+            } catch (err) {
+              addrDiv.textContent = "Ошибка получения адреса";
+              console.error(err);
+            }
+          }, { once: true });
+        }
+
+
+        // Кнопка "Изменить статус" для одной точки (работает в любом режиме)
+        if (changeBtn) {
+          changeBtn.addEventListener('click', async () => {
+            // Локальный переключатель (сервер тоже делает toggle)
+            const newStatusLocal = (pt.is_active === 1 || pt.is_active === true) ? 0 : 1;
+            try {
+              const res = await fetch('/change_status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: [pt.id] }) // бекенд у тебя делает toggle
+              });
+              const data = await res.json();
+              if (data.success) {
+                // Меняем локально иконку и поле is_active
+                pt.is_active = newStatusLocal;
+                marker.setIcon(pt.is_active === 1 ? activeIcon : passiveIcon);
+
+                // Обновляем содержимое popup (чтобы статус в тексте поменялся)
+                popupContent.querySelectorAll('b')[2].nextSibling && (popupContent.querySelectorAll('b')[2].nextSibling.nodeValue = ` ${pt.is_active === 1 ? "Активный" : "Пассивный"}`);
+                // Если проще — можно перезаписать innerHTML статуса, но тут аккуратно меняем текст
+                alert("Статус изменён");
+              } else {
+                alert("Ошибка при обновлении статуса");
+              }
+            } catch (err) {
+              alert("Ошибка соединения");
+              console.error(err);
+            }
+          }, { once: true });
+        }
+      });
     });
 
-    allPoints = points; // обновляем массив видимых точек
-    if (points.length > 0) map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
+    // Масштабирование карты под маркеры (если есть)
+    if (points.length > 0) {
+      try {
+        map.fitBounds(markersLayer.getBounds(), { padding: [50, 50] });
+      } catch (e) {
+        // если один маркер — fitBounds может упасть; игнорируем
+      }
+    }
   }
 
   // ===================================================
@@ -252,34 +320,34 @@
   // ===================================================
   // === 5. ФИЛЬТРЫ ================================
   // ===================================================
-    async function applyFilters() {
-      const selectedUsers = Array.from(document.getElementById('userFilter').selectedOptions)
-        .map(o => o.value).filter(v => v !== "");
+  async function applyFilters() {
+    const selectedUsers = Array.from(document.getElementById('userFilter').selectedOptions)
+      .map(o => o.value).filter(v => v !== "");
 
-      const params = new URLSearchParams();
-      selectedUsers.forEach(u => params.append('user_id', u));
+    const params = new URLSearchParams();
+    selectedUsers.forEach(u => params.append('user_id', u));
 
-      const dateFrom = document.getElementById('dateFromFilter').value;
-      const dateTo = document.getElementById('dateToFilter').value;
-      const timeFrom = document.getElementById('timeFromFilter').value;
-      const timeTo = document.getElementById('timeToFilter').value;
+    const dateFrom = document.getElementById('dateFromFilter').value;
+    const dateTo = document.getElementById('dateToFilter').value;
+    const timeFrom = document.getElementById('timeFromFilter').value;
+    const timeTo = document.getElementById('timeToFilter').value;
 
-      if (dateFrom) params.append('date_from', dateFrom);
-      if (dateTo) params.append('date_to', dateTo);
-      if (timeFrom) params.append('time_from', timeFrom);
-      if (timeTo) params.append('time_to', timeTo);
+    if (dateFrom) params.append('date_from', dateFrom);
+    if (dateTo) params.append('date_to', dateTo);
+    if (timeFrom) params.append('time_from', timeFrom);
+    if (timeTo) params.append('time_to', timeTo);
 
-      const status = document.getElementById('statusFilter').value;
-      if (status !== "") params.append('is_active', status);
+    const status = document.getElementById('statusFilter').value;
+    if (status !== "") params.append('is_active', status);
 
-      try {
-        const res = await fetch('/api/points?' + params.toString());
-        const data = await res.json();
-        updateMap(data);
-      } catch (err) {
-        console.error(err);
-      }
+    try {
+      const res = await fetch('/api/points?' + params.toString());
+      const data = await res.json();
+      updateMap(data);
+    } catch (err) {
+      console.error(err);
     }
+  }
 
   // ===================================================
   // === 6. ЛИНИИ ================================
@@ -292,165 +360,189 @@
     toggleLinesForUser(userId, dateFrom, dateTo);
   });
 
-  async function toggleLinesForUser(userId, dateFrom, dateTo) {
-    if (linesVisible) {
-      linesLayer.clearLayers();
-      popupGroup.forEach(p => map.removeLayer(p));
-      popupGroup = [];
-      linesVisible = false;
-      mergeBtn.textContent = "Объединить";
-      mergeBtn.style.backgroundColor = "";
-      updateMap(allPoints);
-      return;
+
+    async function toggleLinesForUser(userId, dateFrom, dateTo) {
+          const totalDistanceEl = document.getElementById('total-distance'); // сюда запишем итог
+
+        if (linesVisible) {
+            linesLayer.clearLayers();
+            popupGroup.forEach(p => map.removeLayer(p));
+            popupGroup = [];
+            linesVisible = false;
+            mergeBtn.textContent = "Объединить";
+            mergeBtn.style.backgroundColor = "";
+            totalDistanceEl.textContent = ""; // очистить поле
+            updateMap(allPoints);
+            return;
+        }
+
+        if (!userId) return;
+
+          const params = new URLSearchParams({ user_id: userId });
+          if (dateFrom) params.append('date_from', dateFrom);
+          if (dateTo) params.append('date_to', dateTo);
+
+          try {
+            const res = await fetch('/api/points?' + params.toString());
+            const data = await res.json();
+            if (!data.length) return;
+
+            updateMap(data);
+
+            let totalDistance = 0;
+            const pointsByDate = {};
+            data.forEach(pt => (pointsByDate[pt.date] ||= []).push(pt));
+
+            Object.keys(pointsByDate).forEach(date => {
+              const dayPoints = pointsByDate[date].sort((a, b) => a.time.localeCompare(b.time));
+              const latlngs = dayPoints.map(p => [p.lat, p.lon]);
+              const line = L.polyline(latlngs, { color: 'red', weight: 4 }).addTo(linesLayer);
+
+              // расстояния между точками
+              for (let i = 1; i < latlngs.length; i++) {
+                const dist = map.distance(latlngs[i - 1], latlngs[i]) / 1000;
+                totalDistance += dist;
+
+                // всплывающая подсказка при наведении
+                const mid = [
+                  (latlngs[i - 1][0] + latlngs[i][0]) / 2,
+                  (latlngs[i - 1][1] + latlngs[i][1]) / 2
+                ];
+                const segmentLine = L.polyline([latlngs[i - 1], latlngs[i]], { color: 'transparent' }).addTo(linesLayer);
+                segmentLine.bindTooltip(`${dist.toFixed(2)} км`, { permanent: false, sticky: true });
+              }
+
+              const popup = L.popup({ closeButton: false, autoClose: false })
+                .setLatLng(line.getBounds().getCenter())
+                .setContent(`${userId} — ${dayPoints.length} точек`)
+                .openOn(map);
+              popupGroup.push(popup);
+            });
+
+            totalDistanceEl.textContent = `Общая дистанция: ${totalDistance.toFixed(2)} км`;
+            mergeBtn.textContent = "Отменить";
+            mergeBtn.style.backgroundColor = "blue";
+            linesVisible = true;
+
+          } catch (err) {
+            console.error(err);
+        }
     }
-    if (!userId) return;
 
-    const params = new URLSearchParams({ user_id: userId });
-    if (dateFrom) params.append('date_from', dateFrom);
-    if (dateTo) params.append('date_to', dateTo);
-
-    try {
-      const res = await fetch('/api/points?' + params.toString());
-      const data = await res.json();
-      if (!data.length) return;
-
-      updateMap(data);
-
-      const pointsByDate = {};
-      data.forEach(pt => (pointsByDate[pt.date] ||= []).push(pt));
-      Object.keys(pointsByDate).forEach(date => {
-        const dayPoints = pointsByDate[date].sort((a,b)=>a.time.localeCompare(b.time));
-        const latlngs = dayPoints.map(p=>[p.lat,p.lon]);
-        const line = L.polyline(latlngs,{color:'red',weight:4}).addTo(linesLayer);
-        let dist=0; for(let i=1;i<latlngs.length;i++) dist+=map.distance(latlngs[i-1],latlngs[i]); dist/=1000;
-        const popup = L.popup({closeButton:false,autoClose:false})
-          .setLatLng(line.getBounds().getCenter())
-          .setContent(`${userId} — ${dayPoints.length} точек, ${dist.toFixed(2)} км`)
-          .openOn(map);
-        popupGroup.push(popup);
-      });
-
-      mergeBtn.textContent="Отменить";
-      mergeBtn.style.backgroundColor="blue";
-      linesVisible=true;
-    } catch(err){console.error(err);}
-  }
 
   // ===================================================
   // === 7. ПАНЕЛЬ АДМИНИСТРАТОРА ====================
   // ===================================================
-  // === 7.1 Select All points ===
-  // ===================================================
-// === 7. ПАНЕЛЬ АДМИНИСТРАТОРА ====================
-// ===================================================
 
-// === 7.1 Выделение всех точек ===
-let allSelected = false;
-const selectAllBtn = document.getElementById('select-all-btn');
+  // === 7.1 Выделение всех точек ===
+  let allSelected = false;
+  const selectAllBtn = document.getElementById('select-all-btn');
 
-selectAllBtn.addEventListener('click', () => {
-  if (!allSelected) {
-    // ✅ выбрать все активные точки
-    selectedPoints = [...allPoints];
-    selectedPoints.forEach(pt => pt.marker?.setIcon(selectedIcon));
-    selectAllBtn.style.backgroundColor = "green";
-  } else {
-    // 🔄 снять выделение
-    selectedPoints.forEach(pt => pt.marker?.setIcon(pt.status === 1 ? activeIcon : passiveIcon));
-    selectedPoints = [];
-    selectAllBtn.style.backgroundColor = "";
-  }
-  allSelected = !allSelected;
-});
+  selectAllBtn.addEventListener('click', () => {
+    // Разрешаем Select All только в режиме выбора одного статуса
+    const statusFilter = document.getElementById('statusFilter').value;
+    const allowSelection = (statusFilter === "1" || statusFilter === "0");
+    if (!allowSelection) {
+      alert("Select All доступен только при выборе одного статуса (Active или Passive).");
+      return;
+    }
 
-// === 7.2 Смена статуса выбранных точек ===
-let toggleToPassive = true; // первая смена -> делаем пассивными
-const changeStatusBtn = document.getElementById('change-status-btn');
-
-changeStatusBtn.addEventListener('click', async () => {
-  if (!selectedPoints.length) {
-    alert("No points selected.");
-    return;
-  }
-
-  // Меняем статус в UI
-  selectedPoints.forEach(pt => {
-    pt.status = toggleToPassive ? 0 : 1;
-    pt.marker?.setIcon(pt.status === 1 ? activeIcon : passiveIcon);
+    if (!allSelected) {
+      selectedPoints = [...allPoints];
+      selectedPoints.forEach(pt => pt.marker?.setIcon(selectedIcon));
+      selectAllBtn.style.backgroundColor = "green";
+    } else {
+      selectedPoints.forEach(pt => pt.marker?.setIcon(pt.is_active === 1 ? activeIcon : passiveIcon));
+      selectedPoints = [];
+      selectAllBtn.style.backgroundColor = "";
+    }
+    allSelected = !allSelected;
   });
 
-  // Отправляем изменения на сервер
-  try {
-    const res = await fetch('/change_status', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ids: selectedPoints.map(p => p.id),
-        new_status: toggleToPassive ? 0 : 1
-      })
-    });
-    const data = await res.json();
-    if (!data.success) {
-      alert("Error updating status.");
+  // === 7.2 Смена статуса выбранных точек ===
+  const changeStatusBtn = document.getElementById('change-status-btn');
+
+  changeStatusBtn.addEventListener('click', async () => {
+    if (!selectedPoints.length) {
+      alert("No points selected.");
+      return;
     }
-  } catch {
-    alert("Server error while changing status.");
-  }
 
-  // Переключаем направление для следующего нажатия
-  toggleToPassive = !toggleToPassive;
-
-  // Снимаем выделение и сбрасываем цвет кнопок
-  selectedPoints.forEach(pt => pt.marker?.setIcon(pt.status === 1 ? activeIcon : passiveIcon));
-  selectedPoints = [];
-  allSelected = false;
-  selectAllBtn.style.backgroundColor = "";
-});
-
-// === 7.3 Удаление выбранных точек ===
-const deleteBtn = document.getElementById('delete-btn');
-
-deleteBtn.addEventListener('click', async () => {
-  if (!selectedPoints.length) {
-    alert("No points selected.");
-    return;
-  }
-
-  // Проверяем, что все пассивные
-  if (!selectedPoints.every(pt => pt.status === 0)) {
-    alert("You can only delete points with PASSIVE status.");
-    return;
-  }
-
-  if (!confirm("Are you sure you want to delete these points?")) return;
-
-  try {
-    const res = await fetch('/delete_points', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: selectedPoints.map(p => p.id) })
+    // Локально переключаем статусы (пользователь увидит изменения сразу)
+    selectedPoints.forEach(pt => {
+      pt.is_active = (pt.is_active === 1 || pt.is_active === true) ? 0 : 1;
+      pt.marker?.setIcon(pt.is_active === 1 ? activeIcon : passiveIcon);
     });
-    const data = await res.json();
 
-    if (data.success) {
-      // Удаляем с карты и из памяти
-      selectedPoints.forEach(pt => map.removeLayer(pt.marker));
-      selectedPoints = [];
-      allSelected = false;
-      selectAllBtn.style.backgroundColor = "";
-      alert("Points deleted successfully.");
-    } else {
-      alert("Error deleting points.");
+    // Отправляем запрос на сервер: бекенд у тебя делает toggle, поэтому достаточно ids
+    try {
+      const res = await fetch('/change_status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedPoints.map(p => p.id) })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert("Error updating status on server.");
+      }
+    } catch (err) {
+      alert("Server error while changing status.");
+      console.error(err);
     }
-  } catch {
-    alert("Server error while deleting points.");
-  }
-});
 
+    // Снимаем выделение
+    selectedPoints = [];
+    allSelected = false;
+    selectAllBtn.style.backgroundColor = "";
+  });
 
+  // === 7.3 Удаление выбранных точек ===
+  const deleteBtn = document.getElementById('delete-btn');
+
+  deleteBtn.addEventListener('click', async () => {
+    if (!selectedPoints.length) {
+      alert("No points selected.");
+      return;
+    }
+
+    // Проверяем, что все пассивные
+    if (!selectedPoints.every(pt => pt.is_active === 0)) {
+      alert("You can only delete points with PASSIVE status.");
+      return;
+    }
+
+    if (!confirm("Are you sure you want to delete these points?")) return;
+
+    try {
+      const res = await fetch('/delete_points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedPoints.map(p => p.id) })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        // Удаляем с карты и из памяти
+        selectedPoints.forEach(pt => markersLayer.removeLayer(pt.marker));
+        selectedPoints = [];
+        allSelected = false;
+        selectAllBtn.style.backgroundColor = "";
+        alert("Points deleted successfully.");
+      } else {
+        alert("Error deleting points");
+      }
+    } catch (err) {
+      alert("Server error while deleting points.");
+      console.error(err);
+    }
+  });
 
 </script>
 
+
+<script>
+
+</script>
 
 {% endblock %}
 
