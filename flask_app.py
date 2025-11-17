@@ -13,6 +13,13 @@ def index():
     """Главная страница: карта GPS-точек."""
     return render_template("map.html")
 
+@app.route("/new/")
+def index_new():
+    """Новая карта для новых таблиц (points_new, trackers, users)."""
+    return render_template("map_new.html")
+
+
+
 @app.route("/api/points")
 def api_points():
     """
@@ -74,6 +81,76 @@ def api_points():
          "lat": p[4], "lon": p[5], "is_active": p[6]}
         for p in rows
     ])
+
+
+@app.route("/api/points_new")
+def api_points_new():
+    """
+    API для получения GPS-точек из points_new с фильтрацией по user_id, tracker_id, дате, времени и активности.
+    """
+    user_id = request.args.get("user_id")
+    tracker_id = request.args.get("tracker_id")
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+    time_from = request.args.get("time_from")
+    time_to = request.args.get("time_to")
+    is_active = request.args.get("is_active", 1)
+
+    points = get_points_new(
+        user_id=user_id,
+        tracker_id=tracker_id,
+        date_from=date_from,
+        date_to=date_to,
+        time_from=time_from,
+        time_to=time_to,
+        is_active=is_active
+    )
+
+    return jsonify([
+        {
+            "id": p[0],
+            "tracker_id": p[1],
+            "tracker_uid": p[2],
+            "tracker_name": p[3],
+            "date": p[4],
+            "time": p[5],
+            "lat": p[6],
+            "lon": p[7],
+            "speed": p[8],
+            "altitude": p[9],
+            "direction": p[10],
+            "is_active": p[11]
+        }
+        for p in points
+    ])
+
+@app.route("/api/users_new")
+def api_users_new():
+    """Возвращает всех пользователей с ролями"""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT id, name, role FROM users ORDER BY name")
+    users = [{"id": row[0], "name": row[1], "role": row[2]} for row in c.fetchall()]
+    conn.close()
+    return jsonify(users)
+
+
+@app.route("/api/trackers")
+def api_trackers():
+    """Возвращает трекеры для выбранного пользователя"""
+    user_id = request.args.get("user_id")
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    if user_id:
+        c.execute("SELECT id, tracker_name, user_id FROM trackers WHERE user_id = ?", (user_id,))
+    else:
+        c.execute("SELECT id, tracker_name, user_id FROM trackers")
+    trackers = [{"id": row[0], "tracker_name": row[1], "user_id": row[2]} for row in c.fetchall()]
+    conn.close()
+    return jsonify(trackers)
+
+
+
 
 @app.route("/api/users")
 def api_users():

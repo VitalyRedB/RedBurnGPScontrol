@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+
+{% block title %}
+<title>GPS точки - Новая карта</title>
+{% endblock %}
+
+{% block body %}
+
+<!-- === ПАНЕЛЬ ВХОДА / РЕГИСТРАЦИИ === -->
+<div id="login-panel" class="filter-panel show">
+  <h5>Вход / Регистрация</h5>
+  <label for="usernameInput">Имя пользователя</label>
+  <input type="text" id="usernameInput" placeholder="Введите имя">
+  <button id="loginBtn" class="btn btn-primary mt-2">Войти</button>
+  <div id="loginMessage" style="margin-top:10px; color:red;"></div>
+</div>
+
+<!-- === КНОПКИ УПРАВЛЕНИЯ === -->
+<button id="filter-toggle" class="filter-button">☰</button>
+<button id="line-toggle" class="filter-button">L</button>
+<button id="admin-btn" class="filter-button">A</button>
+
+<!-- === ПАНЕЛЬ ФИЛЬТРА === -->
+<div id="filter-panel" class="filter-panel">
+  <h5>Фильтр точек</h5>
+  <label for="userFilter">Пользователи</label>
+  <select id="userFilter" multiple></select>
+
+  <label for="trackerFilter">Трекеры</label>
+  <select id="trackerFilter" multiple></select>
+
+  <label>From date/time → To date/time</label>
+  <div class="date-time-container">
+    <div class="date-time-block">
+      <input type="date" id="dateFromFilter">
+      <input type="time" id="timeFromFilter">
+    </div>
+    <div class="date-time-block">
+      <input type="date" id="dateToFilter">
+      <input type="time" id="timeToFilter">
+    </div>
+  </div>
+
+  <label for="statusFilter">Status points</label>
+  <select id="statusFilter">
+    <option value="">All points</option>
+    <option value="1">Active points</option>
+    <option value="0">Passive points</option>
+  </select>
+
+  <button onclick="applyFilters()" class="btn btn-primary mt-2">Найти</button>
+</div>
+
+<!-- === ПАНЕЛЬ ЛИНИЙ === -->
+<div id="line-panel" class="filter-panel">
+  <h5>Объединение точек</h5>
+  <label for="lineUser">Пользователь</label>
+  <select id="lineUser">
+    <option value="" selected>Выберите пользователя</option>
+  </select>
+
+  <label>From date</label>
+  <input type="date" id="lineDateFrom">
+  <label>To date</label>
+  <input type="date" id="lineDateTo">
+
+  <button id="mergeLines" class="btn btn-primary mt-2">Объединить</button>
+  <div id="total-distance" style="margin-top:10px; font-weight:bold; color:blue;"></div>
+</div>
+
+<!-- === ПАНЕЛЬ АДМИНИСТРАТОРА === -->
+<div id="admin-panel" class="filter-panel">
+  <h5>Админ-панель</h5>
+  <button id="select-all-btn" class="action-btn">Select All points</button>
+  <button id="change-status-btn" class="btn btn-primary mt-2">Change status</button>
+  <button id="delete-btn" class="btn btn-primary mt-2">Delete points</button>
+</div>
+
+<!-- === КАРТА === -->
+<div id="map"></div>
+
+<!-- === ЛЕГЕНДА ЦВЕТОВ === -->
+<div id="legend" class="map-legend">
+  <b>Legend:</b><br>
+  🟢 Active points<br>
+  🔴 Passive points<br>
+  🟡 Selected points
+</div>
+
+<!-- === Leaflet + MarkerCluster === -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+<!-- === CSS === -->
+<link rel="stylesheet" href="{{ url_for('static', filename='css/map.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/filter.css') }}">
+
+<script>
+let currentUser = null;
+let isAdmin = false;
+let allPoints = [];
+let selectedPoints = [];
+let linesVisible = false;
+let popupGroup = [];
+let allSelected = false;
+
+// === Панели управления ===
+const filterToggle = document.getElementById('filter-toggle');
+const lineToggle = document.getElementById('line-toggle');
+const adminBtn = document.getElementById('admin-btn');
+const filterPanel = document.getElementById('filter-panel');
+const linePanel = document.getElementById('line-panel');
+const adminPanel = document.getElementById('admin-panel');
+
+function togglePanel(panel, otherPanels) {
+  if (!Array.isArray(otherPanels)) otherPanels = [otherPanels].filter(Boolean);
+  if (panel.classList.contains('show')) {
+    panel.classList.remove('show');
+  } else {
+    otherPanels.forEach(p => p.classList.remove('show'));
+    panel.classList.add('show');
+  }
+}
+
+filterToggle.addEventListener('click', () => togglePanel(filterPanel, [linePanel, adminPanel]));
+lineToggle.addEventListener('click', () => togglePanel(linePanel, [filterPanel, adminPanel]));
+adminBtn.addEventListener('click', () => togglePanel(adminPanel, [filterPanel, linePanel]));
+
+// === Leaflet карта ===
+const map = L.map('map').setView([50.45, 30.52], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+const markersLayer = L.markerClusterGroup().addTo(map);
+const linesLayer = L.layerGroup().addTo(map);
+
+// === Иконки ===
+const activeIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+});
+const passiveIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+});
+const selectedIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-yellow.png',
+  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconSize: [25,41], iconAnchor:[12,41], popupAnchor:[1,-34], shadowSize:[41,41]
+});
+
+// === Функция входа ===
+document.getElementById('loginBtn').addEventListener('click', async () => {
+  const username = document.getElementById('usernameInput').value.trim();
+  if (!username) { document.getElementById('loginMessage').textContent="Введите имя"; return; }
+
+  try {
+    const res = await fetch('/api/users_new');
+    const users = await res.json();
+    const userObj = users.find(u=>u.name===username);
+    if (!userObj) { document.getElementById('loginMessage').textContent="Пользователь не найден"; return; }
+
+    currentUser = userObj;
+    isAdmin = (currentUser.role === 'ADMIN');
+
+    document.getElementById('login-panel').classList.remove('show');
+    await loadUsers();
+    await loadTrackers(currentUser.id);
+    await loadPoints();
+  } catch(err) { console.error(err); document.getElementById('loginMessage').textContent="Ошибка сервера"; }
+});
+
+// === Загрузка пользователей ===
+async function loadUsers() {
+  const userSelect = document.getElementById('userFilter');
+  userSelect.innerHTML='';
+  if (isAdmin) {
+    const res = await fetch('/api/users_new');
+    const users = await res.json();
+    users.forEach(u=>userSelect.add(new Option(u.name,u.id)));
+  } else {
+    userSelect.add(new Option(currentUser.name,currentUser.id));
+  }
+}
+
+// === Загрузка трекеров ===
+async function loadTrackers(userId) {
+  const trackerSelect = document.getElementById('trackerFilter');
+  trackerSelect.innerHTML='';
+  if (!userId) return;
+
+  const res = await fetch('/api/trackers?user_id=' + userId);
+  const trackers = await res.json();
+  trackers.forEach(t=> {
+    if (isAdmin || t.user_id===currentUser.id) {
+      trackerSelect.add(new Option(t.tracker_name,t.id));
+    }
+  });
+}
+
+// === Загрузка точек ===
+async function loadPoints() {
+  const params = new URLSearchParams();
+  params.append('user_id', currentUser.id);
+  try {
+    const res = await fetch('/api/points_new?' + params.toString());
+    const data = await res.json();
+    updateMap(data);
+  } catch(err){ console.error(err); }
+}
+
+// === Обновление карты ===
+function updateMap(points){
+  markersLayer.clearLayers(); selectedPoints=[]; allPoints=points;
+
+  points.forEach(pt=>{
+    const icon = pt.is_active===1?activeIcon:passiveIcon;
+    const marker = L.marker([pt.lat,pt.lon],{icon}).addTo(markersLayer);
+    pt.marker=marker;
+
+    marker.on('click',()=>{
+      const idx = selectedPoints.findIndex(p=>p.id===pt.id);
+      if(idx>=0){ selectedPoints.splice(idx,1); marker.setIcon(pt.is_active===1?activeIcon:passiveIcon);}
+      else{ selectedPoints.push(pt); marker.setIcon(selectedIcon);}
+    });
+
+    const popup = `<b>${pt.user_id}</b><br>${pt.date} ${pt.time}<br>Status: ${pt.is_active===1?'Active':'Passive'}`;
+    marker.bindPopup(popup);
+  });
+
+  if(points.length>0){ try{ map.fitBounds(markersLayer.getBounds(),{padding:[50,50]}); }catch(e){} }
+}
+
+// === Фильтры ===
+async function applyFilters() {
+  const userSelect = Array.from(document.getElementById('userFilter').selectedOptions).map(o=>o.value).filter(v=>v!=="");
+  const trackerSelect = Array.from(document.getElementById('trackerFilter').selectedOptions).map(o=>o.value).filter(v=>v!=="");
+  const params = new URLSearchParams();
+  userSelect.forEach(u=>params.append('user_id',u));
+  trackerSelect.forEach(t=>params.append('tracker_id',t));
+  const dateFrom = document.getElementById('dateFromFilter').value;
+  const dateTo = document.getElementById('dateToFilter').value;
+  const timeFrom = document.getElementById('timeFromFilter').value;
+  const timeTo = document.getElementById('timeToFilter').value;
+  const status = document.getElementById('statusFilter').value;
+  if(dateFrom) params.append('date_from',dateFrom);
+  if(dateTo) params.append('date_to',dateTo);
+  if(timeFrom) params.append('time_from',timeFrom);
+  if(timeTo) params.append('time_to',timeTo);
+  if(status!=="") params.append('is_active',status);
+
+  const res = await fetch('/api/points_new?' + params.toString());
+  const data = await res.json();
+  updateMap(data);
+}
+
+// === Админ-панель ===
+function adminControls(){
+  const selectAllBtn = document.getElementById('select-all-btn');
+  selectAllBtn.addEventListener('click',()=>{
+    const allowedPoints = allPoints.filter(p=>isAdmin || p.user_id===currentUser.id);
+    if(!allSelected){ selectedPoints=allowedPoints; selectedPoints.forEach(p=>p.marker.setIcon(selectedIcon)); allSelected=true;}
+    else{ selectedPoints.forEach(p=>p.marker.setIcon(p.is_active===1?activeIcon:passiveIcon)); selectedPoints=[]; allSelected=false;}
+  });
+
+  const changeStatusBtn = document.getElementById('change-status-btn');
+  changeStatusBtn.addEventListener('click',async ()=>{
+    const allowedPoints = selectedPoints.filter(p=>isAdmin || p.user_id===currentUser.id);
+    allowedPoints.forEach(p=>{p.is_active=p.is_active===1?0:1; p.marker.setIcon(p.is_active===1?activeIcon:passiveIcon);});
+    await fetch('/change_status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:allowedPoints.map(p=>p.id)})});
+    selectedPoints=[]; allSelected=false;
+  });
+
+  const deleteBtn = document.getElementById('delete-btn');
+  deleteBtn.addEventListener('click',async ()=>{
+    const allowedPoints = selectedPoints.filter(p=>isAdmin || p.user_id===currentUser.id);
+    if(!allowedPoints.every(p=>p.is_active===0)) return alert("Only passive points can be deleted.");
+    await fetch('/delete_points',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:allowedPoints.map(p=>p.id)})});
+    allowedPoints.forEach(p=>markersLayer.removeLayer(p.marker));
+    selectedPoints=[]; allSelected=false;
+  });
+}
+
+window.addEventListener('DOMContentLoaded',()=>{
+  adminControls();
+});
+</script>
+
+{% endblock %}
+
