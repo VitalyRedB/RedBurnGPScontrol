@@ -30,6 +30,55 @@
     </style>
 
 </head>
+
+<script>
+// Открыть окно
+function openLogin() {
+    document.getElementById("loginPanel").style.display = "block";
+
+    // загрузить список пользователей
+    fetch("/api/users_new")
+        .then(r => r.json())
+        .then(users => {
+            let sel = document.getElementById("userSelect");
+            sel.innerHTML = "";
+            users.forEach(u => {
+                let opt = document.createElement("option");
+                opt.value = u.id;
+                opt.textContent = u.username;
+                sel.appendChild(opt);
+            });
+        });
+}
+
+// Закрыть окно
+function closeLogin() {
+    document.getElementById("loginPanel").style.display = "none";
+}
+
+// Выбор пользователя
+function login() {
+    let user_id = document.getElementById("userSelect").value;
+
+    fetch("/set_user?uid=" + user_id)
+        .then(() => {
+            closeLogin();
+            location.reload();
+        });
+}
+</script>
+<script>
+fetch("/whoami")
+    .then(r => r.json())
+    .then(info => {
+        if (info.user) {
+            document.getElementById("currentUser").textContent =
+                "Logged in as: " + info.user.username;
+        }
+    });
+</script>
+
+
 <body>
 
 <div class="container py-3">
@@ -47,10 +96,32 @@
         </nav>
 
         <div class="d-flex gap-2">
-            <a class="btn btn-outline-primary" href="/create">Додати заявку</a>
-
+            <button class="btn btn-outline-primary" onclick="openLogin()">Log In</button>
         </div>
+
+        <div id="loginPanel"
+            style="display:none; position:absolute; top:60px; right:20px; background:white;
+                    padding:15px; border:1px solid #ccc; border-radius:8px; z-index:9999;">
+            <h5>Select User</h5>
+
+            <select id="userSelect" class="form-select mb-2"></select>
+
+                <button class="btn btn-primary" onclick="login()">OK</button>
+                <button class="btn btn-secondary" onclick="closeLogin()">Cancel</button>
+            </div>
+
+            <div id="currentUser" style="position:absolute; top:10px; right:150px; color:#555;">
+    <!-- тут будет показываться Logged in as ... -->
+        </div>
+
+
+
     </div>
+
+
+
+
+
 </header>
 
     {% block body %}{% endblock %}

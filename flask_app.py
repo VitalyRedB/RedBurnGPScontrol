@@ -86,53 +86,29 @@ def api_points():
 @app.route("/api/points_new")
 def api_points_new():
     """
-    API для получения GPS-точек из points_new с фильтрацией по user_id, tracker_id, дате, времени и активности.
+    API для получения GPS-точек из points_new
+    для выбранного пользователя.
     """
     user_id = request.args.get("user_id")
-    tracker_id = request.args.get("tracker_id")
-    date_from = request.args.get("date_from")
-    date_to = request.args.get("date_to")
-    time_from = request.args.get("time_from")
-    time_to = request.args.get("time_to")
-    is_active = request.args.get("is_active", 1)
+    if not user_id:
+        return jsonify([])  # если пользователь не указан, возвращаем пустой список
 
-    points = get_points_new(
-        user_id=user_id,
-        tracker_id=tracker_id,
-        date_from=date_from,
-        date_to=date_to,
-        time_from=time_from,
-        time_to=time_to,
-        is_active=is_active
-    )
-
-    return jsonify([
-        {
-            "id": p[0],
-            "tracker_id": p[1],
-            "tracker_uid": p[2],
-            "tracker_name": p[3],
-            "date": p[4],
-            "time": p[5],
-            "lat": p[6],
-            "lon": p[7],
-            "speed": p[8],
-            "altitude": p[9],
-            "direction": p[10],
-            "is_active": p[11]
-        }
-        for p in points
-    ])
-
-@app.route("/api/users_new")
-def api_users_new():
-    """Возвращает всех пользователей с ролями"""
     conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT id, name, role FROM users ORDER BY name")
-    users = [{"id": row[0], "name": row[1], "role": row[2]} for row in c.fetchall()]
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    # Получаем все точки пользователя
+    cur.execute("""
+        SELECT id, tracker_id, tracker_uid, tracker_name, date, time, lat, lon, speed, altitude, direction, is_active
+        FROM points_new
+        WHERE user_id = ?
+        ORDER BY date, time
+    """, (user_id,))
+
+    points = [dict(row) for row in cur.fetchall()]
     conn.close()
-    return jsonify(users)
+    return jsonify(points)
+
 
 
 @app.route("/api/trackers")
@@ -148,6 +124,18 @@ def api_trackers():
     trackers = [{"id": row[0], "tracker_name": row[1], "user_id": row[2]} for row in c.fetchall()]
     conn.close()
     return jsonify(trackers)
+
+@app.route("/api/users_new")
+def api_users_new():
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute("SELECT id, username FROM users ORDER BY username")
+    users = [dict(row) for row in cur.fetchall()]
+
+    conn.close()
+    return jsonify(users)
 
 
 
@@ -248,6 +236,29 @@ def change_status():
     except Exception as e:
         print("Error in /change_status:", e)
         return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route("/set_user")
+def set_user():
+    uid = request.args.get("uid")
+    resp = jsonify({"status": "ok"})
+    resp.set_cookie("uid", uid, max_age=60*60*24*365)
+    return resp
+
+@app.route("/whoami")
+def whoami():
+    uid = request.cookies.get("uid")
+    if not uid:
+        return jsonify({"user": None})
+
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id, username FROM users WHERE id=?", (uid,))
+    row = cur.fetchone()
+    conn.close()
+
+    return jsonify({"user": dict(row) if row else None})
 
 
 
