@@ -87,27 +87,44 @@ def api_points():
 def api_points_new():
     """
     API для получения GPS-точек из points_new
-    для выбранного пользователя.
+    для выбранного пользователя с именами трекеров.
     """
     user_id = request.args.get("user_id")
     if not user_id:
         return jsonify([])  # если пользователь не указан, возвращаем пустой список
 
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
 
-    # Получаем все точки пользователя
-    cur.execute("""
-        SELECT id, tracker_id, tracker_uid, tracker_name, date, time, lat, lon, speed, altitude, direction, is_active
-        FROM points_new
-        WHERE user_id = ?
-        ORDER BY date, time
-    """, (user_id,))
+        # Получаем все точки пользователя с именами трекеров
+        cur.execute("""
+            SELECT
+                p.id,
+                p.tracker_id,
+                t.tracker_name,
+                p.user_id,
+                p.date,
+                p.time,
+                p.lat,
+                p.lon,
+                p.speed,
+                p.altitude,
+                p.direction,
+                p.is_active
+            FROM points_new p
+            JOIN trackers t ON p.tracker_id = t.id
+            WHERE p.user_id = ?
+            ORDER BY p.date, p.time
+        """, (user_id,))
 
-    points = [dict(row) for row in cur.fetchall()]
-    conn.close()
-    return jsonify(points)
+        points = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return jsonify(points)
+    except Exception as e:
+        # Для отладки возвращаем текст ошибки
+        return jsonify({"error": str(e)})
 
 
 
