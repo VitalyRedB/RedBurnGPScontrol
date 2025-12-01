@@ -2,10 +2,9 @@
 
 import sqlite3
 import os
+from config import DB_NAME
 
-# Абсолютный путь к файлу базы
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_NAME = os.path.join(BASE_DIR, "database.db")
+
 
 def get_points_new(user_id=None, tracker_id=None, date_from=None, date_to=None, time_from=None, time_to=None, is_active=1):
     """
@@ -128,7 +127,7 @@ def get_users():
     """Возвращает список всех пользователей: [(id, name), ...]"""
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute("SELECT id, name FROM users ORDER BY name")
+    c.execute("SELECT id, username FROM users ORDER BY username")
     users = c.fetchall()
     conn.close()
     return users
@@ -145,6 +144,24 @@ def add_point_new(tracker_id, date, time, lat, lon, speed=None, altitude=None, d
     """, (tracker_id, date, time, lat, lon, speed, altitude, direction, is_active))
     conn.commit()
     conn.close()
+
+
+
+
+def get_last_point(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM points
+        WHERE user_id = ?
+        ORDER BY date DESC, time DESC, id DESC
+        LIMIT 1
+    """, (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
 
 
 def add_point(user_id, date, time, lat, lon):

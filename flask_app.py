@@ -3,8 +3,11 @@
 from flask import Flask, jsonify, render_template, request
 from db import get_points, get_users, execute_db_action
 from add_point import handle_add_point
-from db import DB_NAME
+from config import DB_NAME
 import sqlite3
+import bcrypt
+
+import logging
 
 app = Flask(__name__)
 
@@ -255,6 +258,8 @@ def change_status():
         return jsonify({'success': False, 'error': str(e)})
 
 
+
+# новые роуты проекта
 @app.route("/set_user")
 def set_user():
     uid = request.args.get("uid")
@@ -277,7 +282,83 @@ def whoami():
 
     return jsonify({"user": dict(row) if row else None})
 
+# --- API для логина ---
+@app.route("/api/login", methods=["POST"])
+def api_login():
+    """
+    Вход пользователя: получаем username и password,
+    ищем в users, проверяем хеш пароля.
+    """
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
 
+    if not username or not password:
+        return jsonify({"status": "error", "message": "Username and password required"}), 400
+
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
+    user = cur.fetchone()
+    conn.close()
+
+    if not user:
+        return jsonify({"status": "error", "message": "User not found"}), 404
+
+    # Проверяем пароль через bcrypt
+    if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
+        # Успешный вход, ставим куку
+        resp = jsonify({"status": "ok", "user": {"id": user["id"], "username": user["username"]}})
+        resp.set_cookie("uid", str(user["id"]), max_age=60*60*24*365)
+        return resp
+    else:
+        return jsonify({"status": "error", "message": "Invalid password"}), 401
+
+
+# --- API для регистрации нового пользователя ---
+@app.route("/api/register", methods=["POST"])
+def api_register():
+    """
+    Регистрация нового пользователя: username+password,
+    пароль хешируется и сохраняется в DB.
+    """
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"status": "error", "message": "Username and password required"}), 400
+
+    # Проверяем, существует ли уже пользователь
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE username = ?", (username,))
+    if cur.fetchone():
+        conn.close()
+        return jsonify({"status": "error", "message": "Username already exists"}), 409
+
+    # Хешируем пароль
+    pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    # Сохраняем нового пользователя
+    cur.execute("INSERT INTO users (username, password_hash, status) VALUES (?, ?, 1)", (username, pw_hash))
+    conn.commit()
+    user_id = cur.lastrowid
+    conn.close()
+
+    resp = jsonify({"status": "ok", "user": {"id": user_id, "username": username}})
+    resp.set_cookie("uid", str(user_id), max_age=60*60*24*365)
+    return resp
+
+
+# --- Обновим API /logout ---
+@app.route("/logout")
+def api_logout():
+    resp = jsonify({"status": "ok"})
+    resp.set_cookie("uid", "", expires=0)
+    return resp
 
 if __name__ == "__main__":
     app.run(debug=True)

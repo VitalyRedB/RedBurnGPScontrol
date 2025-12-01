@@ -1,0 +1,324 @@
+{% extends "base_new.html" %}
+
+{% block title %}
+<title>GPS точки (новая карта)</title>
+{% endblock %}
+
+{% block body %}
+
+<!-- === КАРТА ===      ТУТ ОБЩИЙ КОД на 28112025-->
+<div id="map" style="height:50vh; width:100%;"></div>
+
+<!-- === СПИСОК ТОЧЕК ПОД КАРТОЙ === -->
+<h4>Список точек пользователя</h4>
+<div id="pointsList" style="max-height:25vh; overflow-y:auto; margin-top:10px; border-top:1px solid #ccc; padding-top:5px;"></div>
+
+<!-- === Leaflet === -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+
+<script>
+// === Инициализация карты ===
+const map = L.map('map').setView([50.45, 30.52], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+// === Используем FeatureGroup вместо LayerGroup, чтобы работать с getBounds ===
+// const markersLayer = L.featureGroup().addTo(map);
+const markersLayer = L.markerClusterGroup().addTo(map);
+
+// === Иконки ===
+const activeIcon = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+    iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34]
+});
+const passiveIcon = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+    iconSize:[25,41], iconAnchor:[12,41], popupAnchor:[1,-34]
+});
+
+// === ТЕСТОВАЯ ТОЧКА (КИЕВ) ===
+function addTestPoint() {
+    const testMarker = L.marker([50.4501, 30.5234]).addTo(markersLayer);
+    testMarker.bindPopup("Тестовая точка: Киев");
+    console.log("Тестовая точка добавлена!");
+}
+
+// === Отрисовка точек на карте ===
+function updateMap(points) {
+    markersLayer.clearLayers();
+    if (!points || points.length === 0) return;
+    points.forEach(pt => {
+        if(pt.lat == null || pt.lon == null) return;
+
+        const icon = pt.is_active === 1 ? activeIcon : passiveIcon;
+
+        const marker = L.marker([pt.lat, pt.lon], {icon});
+        marker.bindPopup(`
+            <b>${pt.tracker_name}</b><br>
+            ${pt.date} ${pt.time}<br>
+            Status: ${pt.is_active === 1 ? "Active" : "Passive"}
+        `);
+
+        markersLayer.addLayer(marker);
+    });
+
+    // fitBounds работает идеально с кластерами
+    if (markersLayer.getLayers().length > 0) {
+        map.fitBounds(markersLayer.getBounds(), {padding:[50,50]});
+    }
+}
+
+
+
+function updateMap1(points) {
+    markersLayer.clearLayers();
+    if (!points || points.length === 0) return;
+
+    points.forEach(pt => {
+        if(pt.lat == null || pt.lon == null) return; // проверяем реальные поля
+        const icon = pt.is_active === 1 ? activeIcon : passiveIcon;
+        const marker = L.marker([pt.lat, pt.lon], {icon}).addTo(markersLayer);
+        marker.bindPopup(`<b>${pt.tracker_name}</b><br>${pt.date} ${pt.time}<br>Status: ${pt.is_active===1 ? "Active" : "Passive"}`);
+    });
+}
+
+// === Отображение точек в списке ===
+function showPoints(points) {
+    const container = document.getElementById("pointsList");
+    container.innerHTML = "";
+    if (!points) return;
+    points.forEach(pt => {
+        const div = document.createElement("div");
+        div.textContent = `ID: ${pt.id}, Tracker: ${pt.tracker_name}, Lat: ${pt.lat}, Lon: ${pt.lon}, Date: ${pt.date}, Time: ${pt.time}, Active: ${pt.is_active}`;
+        container.appendChild(div);
+    });
+}
+
+// --- Получаем текущего пользователя (id) ---
+async function getCurrentUserId() {
+    const res = await fetch('/whoami');
+    const data = await res.json();
+    return data.user ? info.user.id : null;
+}
+
+// --- Загрузка точек ---
+async function loadPoints(userId) {
+    if (!userId) return [];
+    const res = await fetch(`/api/points_new?user_id=${userId}`);
+    const points = await res.json();
+    console.log("Points:", points);
+    return points;
+}
+
+// --- Инициализация ---
+(async () => {
+    const userId = await getCurrentUserId();
+    if (!userId) {
+        alert("Пользователь не выбран!");
+        return;
+    }
+
+    const points = await loadPoints(userId);
+
+    // 1) отображаем список
+    showPoints(points);
+
+    // 2) добавляем точки на карту
+    updateMap(points);
+
+    // 3) добавляем тестовую точку (Киев)
+    addTestPoint();
+
+    // 4) центрируем карту по всем маркерам
+    if (markersLayer.getLayers().length > 0) {
+        map.fitBounds(markersLayer.getBounds(), {padding:[50,50]});
+    }
+})();
+
+// --- Маркер напрямую на карте (проверка) ---
+setTimeout(() => {
+    console.log("Добавляем прямой маркер...");
+    L.marker([50.44, 30.53]).addTo(map).bindPopup("TEST MARKER");
+}, 2000);
+
+// --- Новые правки с 27ю11ю25 ---
+
+let markersLayer = L.layerGroup().addTo(map); // слой для маркеров
+
+function showDefaultPoint() {
+    markersLayer.clearLayers(); // очищаем предыдущие маркеры
+    L.marker([50.4501, 30.5234]).addTo(markersLayer).bindPopup("Киев");
+}
+
+function loadUserPoints(userId) {
+    fetch("/api/points_new?user_id=" + userId)
+        .then(r => r.json())
+        .then(points => {
+            markersLayer.clearLayers(); // очищаем перед загрузкой новых
+            if (points.length === 0) {
+                showDefaultPoint();
+            } else {
+                points.forEach(p => {
+                    L.marker([p.lat, p.lon]).addTo(markersLayer);
+                });
+            }
+        });
+}
+
+// после логина или регистрации
+function updateUIAfterLogin(user) {
+    document.getElementById("currentUser").textContent = "Logged in as: " + user.username;
+    const loginBtn = document.getElementById("loginBtn");
+    loginBtn.textContent = "Log Out";
+    loginBtn.onclick = logout;
+    document.getElementById("selectTrackersBtn").disabled = false;
+
+    loadUserPoints(user.id);
+}
+
+// проверка сессии при загрузке страницы
+fetch("/whoami")
+    .then(r => r.json())
+    .then(info => {
+        if (info.user) {
+            updateUIAfterLogin(info.user);
+        } else {
+            showDefaultPoint();
+        }
+    });
+
+// регистрация пользователя
+function register() {
+    let username = document.getElementById("regUsername").value;
+    let password = document.getElementById("regPassword").value;
+
+    fetch("/api/register", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username: username, password: password})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.status === "ok") {
+            closeLogin();
+            updateUIAfterLogin(data.user);
+        } else {
+            alert(data.message);
+        }
+    });
+}
+
+// логаут
+function logout() {
+    fetch("/logout")
+        .then(() => {
+            document.getElementById("currentUser").textContent = "";
+            document.getElementById("loginBtn").textContent = "Log In";
+            document.getElementById("loginBtn").onclick = openLogin;
+            document.getElementById("selectTrackersBtn").disabled = true;
+
+            showDefaultPoint();
+        });
+}
+
+// --- код из файла правки с 27ю11ю25 ---
+
+// login.js — управление логином и регистрацией
+
+// Открытие окна логина
+function openLogin() {
+    document.getElementById("loginPanel").style.display = "block";
+}
+
+// Закрытие окна логина
+function closeLogin() {
+    document.getElementById("loginPanel").style.display = "none";
+}
+
+// Открытие регистрации (можно потом расширить)
+function openRegister() {
+    alert("Registration form will be implemented here.");
+}
+
+// Логин пользователя
+function login() {
+    let username = document.getElementById("usernameInput").value;
+    let password = document.getElementById("passwordInput").value;
+
+    fetch("/api/login", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username: username, password: password})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if(data.status ==="ok"){
+            closeLogin();
+            updateUIAfterLogin(data.user);
+        } else {
+            alert("Invalid username or password1");
+        }
+    });
+}
+
+// Логаут пользователя
+function logout() {
+    fetch("/logout")
+        .then(() => {
+            document.getElementById("currentUser").textContent = "";
+            const loginBtn = document.getElementById("loginBtn");
+            loginBtn.textContent = "Log In";
+            loginBtn.onclick = openLogin;
+            document.getElementById("selectTrackersBtn").disabled = true;
+        });
+}
+
+// Обновление интерфейса после логина
+function updateUIAfterLogin(user) {
+    document.getElementById("currentUser").textContent = "Logged in as: " + user.username;
+
+    const loginBtn = document.getElementById("loginBtn");
+    loginBtn.textContent = "Log Out";
+    loginBtn.onclick = logout;
+
+    document.getElementById("selectTrackersBtn").disabled = false;
+}
+
+// Показ/скрытие панели фильтра
+function toggleFilterPanel() {
+    const panel = document.getElementById("filter-panel");
+    panel.style.display = panel.style.display === "block" ? "none" : "block";
+}
+
+
+
+function loadUserPoints(userId) {
+    fetch("/api/points_new?user_id=" + userId)
+        .then(r => r.json())
+        .then(points => {
+            points.forEach(p => {
+                L.marker([p.lat, p.lon]).addTo(map);
+            });
+        });
+}
+
+
+// Проверка, если пользователь уже в сессии
+fetch("/whoami")
+    .then(r => r.json())
+    .then(info => {
+        if (info.user) {
+            updateUIAfterLogin(info.user);
+            loadUserPoints(info.user.id);
+        }
+    });
+
+
+</script>
+
+{% endblock %}
