@@ -7,43 +7,18 @@
 
 <style>
 /* === Стили для навигации и ссылок === */
-.link-secondary {
-    color: #8B0000 !important;
-    text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
-}
-.link-secondary:hover {
-    color: #FF4500 !important;
-    text-shadow: 0px 0px 5px rgba(255,215,0,0.7);
-}
-.nav-link {
-    text-decoration: underline;
-    transition: color 0.3s, text-decoration-color 0.3s;
-}
-.nav-link:hover {
-    color: #007bff;
-}
+.link-secondary {color: #8B0000 !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);}
+.link-secondary:hover {color: #FF4500 !important; text-shadow: 0px 0px 5px rgba(255,215,0,0.7);}
+.nav-link {text-decoration: underline; transition: color 0.3s, text-decoration-color 0.3s;}
+.nav-link:hover {color: #007bff;}
 
 /* === Фильтр-панель === */
 .filter-panel {
-    display: none;
-    position: absolute;
-    top: 60px;
-    right: 20px;
-    width: 300px;
-    background: white;
-    padding: 15px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    z-index: 9999;
-}
-.date-time-container {
-    display: flex;
-    justify-content: space-between;
-}
-.date-time-block input {
-    width: 140px;
-    margin-bottom: 5px;
-}
+    display: none; position: absolute; top: 60px;
+    right: 20px; width: 300px;
+    background: white; padding: 15px; border: 1px solid #ccc; border-radius: 8px; z-index: 9999;}
+.date-time-container { display: flex; justify-content: space-between;}
+.date-time-block input { width: 140px; margin-bottom: 5px;}
 </style>
 </head>
 
@@ -92,14 +67,14 @@
 </div>
 
 <!-- Подключение JS -->
-<script src="{{ url_for('static', filename='login.js') }}"></script>
+<!--<script src="{{ url_for('static', filename='login.js') }}"></script>-->
 
-<!-- === FILTER PANEL / Панель фильтра === -->
-<div id="filter-panel" class="filter-panel">
+<!-- === FILTER trekers PANEL / Панель фильтра === -->
+<div id="trekers-panel" class="filter-panel">
   <h5>Points Filter</h5>
-  <label for="userFilter">Users</label>
-  <select id="userFilter" multiple>
-    <option value="" selected>All users</option>
+  <label for="trekersFilter">Trekers</label>
+  <select id="trekersFilter" multiple>
+    <option value="" selected>All trekers</option>
   </select>
 
   <label>From date/time → To date/time</label>
@@ -125,9 +100,6 @@
 </div>
 
 {% block body %}{% endblock %}
-
-<!-- === Подключение JS === -->
-<script src="{{ url_for('static', filename='js/login.js') }}"></script>
 
 </body>
 </html>

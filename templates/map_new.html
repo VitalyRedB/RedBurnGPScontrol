@@ -104,6 +104,24 @@ async function loadUserPoints(userId) {
     const res = await fetch(`/api/points_new?user_id=${userId}`);
     return await res.json();
 }
+
+async function refreshUserData(userId) {
+    const listBox = document.getElementById("pointsList");
+
+    if (!userId) {
+        // нет пользователя → пустой список, карта = Киев
+        listBox.innerHTML = "";
+        markersLayer.clearLayers();
+        map.setView([50.45, 30.52], 10);
+        return;
+    }
+
+    const points = await loadUserPoints(userId);
+
+    showPoints(points);
+    updateMap(points);
+}
+
 </script>
 
 
@@ -118,24 +136,27 @@ function closeLogin() { document.getElementById("loginPanel").style.display = "n
 
 // ЛОГИН
 function login() {
-    const username = document.getElementById("usernameInput").value;
-    const password = document.getElementById("passwordInput").value;
+    const username = document.getElementById("usernameInput").value.trim();
+    const password = document.getElementById("passwordInput").value.trim();
 
     fetch("/api/login", {
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({username, password})
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ username, password }),
     })
     .then(r => r.json())
     .then(data => {
         if (data.status === "ok") {
-            closeLogin();
             updateUIAfterLogin(data.user);
+            closeLogin();
+
         } else {
-            alert("Invalid username or password");
+            alert("Wrong login or password");
         }
     });
 }
+
+
 
 // РЕГИСТРАЦИЯ
 function register() {
@@ -160,19 +181,31 @@ function register() {
 
 // ЛОГАУТ
 function logout() {
+
     fetch("/logout").then(() => {
+
         document.getElementById("currentUser").textContent = "";
         const btn = document.getElementById("loginBtn");
+
         btn.textContent = "Log In";
         btn.onclick = openLogin;
 
+        // выключаем кнопку выбора трекеров
         document.getElementById("selectTrackersBtn").disabled = true;
 
-        markersLayer.clearLayers();
+        // скрываем панель трекеров
+        document.getElementById("trekers-panel").style.display = "none";
+
+        // очищаем список трекеров
+        document.getElementById("trekersFilter").innerHTML = "";
+
+        // очищаем карту + список
+        refreshUserData(null);
     });
 }
 
-// После логина
+
+
 function updateUIAfterLogin(user) {
     document.getElementById("currentUser").textContent = "Logged in as: " + user.username;
 
@@ -181,13 +214,11 @@ function updateUIAfterLogin(user) {
     btn.onclick = logout;
     document.getElementById("selectTrackersBtn").disabled = false;
 
-    // === Получаем точки и обновляем список + карту ===
-    loadUserPoints(user.id).then(points => {
-        console.log("Points loaded after login:", points);
-        showPoints(points);      // ← ЭТОГО НЕ БЫЛО
-        updateMap(points);
-    });
+    refreshUserData(user.id);  // ← вместо showPoints + updateMap
+    loadTrekers(user.id);   // <<< ДОБАВИТЬ
 }
+
+
 
 </script>
 
@@ -202,16 +233,47 @@ function updateUIAfterLogin(user) {
     const info = await fetch("/whoami").then(r => r.json());
 
     if (!info.user) {
-        addTestPoint();
+        // нет пользователя → пустой список и карта Киев
+        refreshUserData(null);
         return;
     }
 
-    updateUIAfterLogin(info.user);
-
-    const points = await loadUserPoints(info.user.id);
-    showPoints(points);
-    updateMap(points);
+    updateUIAfterLogin(info.user);  // сам вызовет refreshUserData
 })();
+
+// === Функция открытия панели фильтра ===
+function toggleFilterPanel() {
+    const panel = document.getElementById("trekers-panel");
+    panel.style.display = (panel.style.display === "block") ? "none" : "block";
+}
+
+async function loadTrekers(userId) {
+    if (!userId) {
+        document.getElementById("trekersFilter").innerHTML = "";
+        return;
+    }
+
+    const res = await fetch(`/api/trackers?user_id=${userId}`);
+    const data = await res.json();
+
+    const select = document.getElementById("trekersFilter");
+    select.innerHTML = "";
+
+    // пункт "All"
+    const optAll = document.createElement("option");
+    optAll.value = "";
+    optAll.textContent = "All trekers";
+    select.appendChild(optAll);
+
+    data.forEach(t => {
+        const opt = document.createElement("option");
+        opt.value = t.id;
+        opt.textContent = t.tracker_name;
+        select.appendChild(opt);
+    });
+}
+
+
 </script>
 
 
