@@ -87,12 +87,11 @@ function showPoints(points) {
 }
 </script>
 
-
-
 <!-- ========================================================= -->
 <!-- ====================== API.JS =========================== -->
 <!-- ========================================================= -->
 <script>
+let currentUser = null;
 // Получение user_id
 async function getCurrentUserId() {
     const res = await fetch('/whoami');
@@ -126,15 +125,18 @@ async function refreshUserData(userId) {
 
 </script>
 
-
-
 <!-- ========================================================= -->
 <!-- ==================== LOGIN.JS ========================== -->
 <!-- ========================================================= -->
 <script>
-// Открыть/закрыть окно логина
-function openLogin()  { document.getElementById("loginPanel").style.display = "block"; }
-function closeLogin() { document.getElementById("loginPanel").style.display = "none"; }
+// === ПАНЕЛИ ===
+function closeAllPanels() {
+    document.getElementById("loginPanel").style.display = "none";
+    document.getElementById("trekers-panel").style.display = "none";}
+
+// === Открыть или Закрыть окно логина ===
+function openLogin() {closeAllPanels(); document.getElementById("loginPanel").style.display = "block";}
+function closeLogin() {document.getElementById("loginPanel").style.display = "none";}
 
 // ЛОГИН
 function login() {
@@ -150,15 +152,12 @@ function login() {
     .then(data => {
         if (data.status === "ok") {
             updateUIAfterLogin(data.user);
-            closeLogin();
-
+            closeLogin();      // закрываем окно логина
         } else {
             alert("Wrong login or password");
         }
     });
 }
-
-
 
 // РЕГИСТРАЦИЯ
 function register() {
@@ -173,7 +172,7 @@ function register() {
     .then(r => r.json())
     .then(data => {
         if (data.status === "ok") {
-            closeLogin();
+            closeLogin();      // закрываем окно логина
             updateUIAfterLogin(data.user);
         } else {
             alert(data.message);
@@ -183,30 +182,23 @@ function register() {
 
 // ЛОГАУТ
 function logout() {
-
     fetch("/logout").then(() => {
-
         document.getElementById("currentUser").textContent = "";
         const btn = document.getElementById("loginBtn");
-
         btn.textContent = "Log In";
         btn.onclick = openLogin;
 
         // выключаем кнопку выбора трекеров
         document.getElementById("selectTrackersBtn").disabled = true;
-
-        // скрываем панель трекеров
-        document.getElementById("trekers-panel").style.display = "none";
+        closeAllPanels();           // закрываем все панели
 
         // очищаем список трекеров
         document.getElementById("trekersFilter").innerHTML = "";
 
         // очищаем карту + список
-        refreshUserData(null);
+        refreshUserData(null);      // карта Киев, список пуст
     });
 }
-
-
 
 function updateUIAfterLogin(user) {
     document.getElementById("currentUser").textContent = "Logged in as: " + user.username;
@@ -218,13 +210,10 @@ function updateUIAfterLogin(user) {
 
     refreshUserData(user.id);  // ← вместо showPoints + updateMap
     loadTrekers(user.id);   // <<< ДОБАВИТЬ
+    currentUser = user;
 }
 
-
-
 </script>
-
-
 
 <!-- ========================================================= -->
 <!-- =============== ИНИЦИАЛИЗАЦИЯ СТРАНИЦЫ ================== -->
@@ -243,10 +232,16 @@ function updateUIAfterLogin(user) {
     updateUIAfterLogin(info.user);  // сам вызовет refreshUserData
 })();
 
-// === Функция открытия панели фильтра ===
+// === Открыть/Закрыть фильтр трекеров ===
 function toggleFilterPanel() {
     const panel = document.getElementById("trekers-panel");
-    panel.style.display = (panel.style.display === "block") ? "none" : "block";
+    const isVisible = panel.style.display === "block";
+
+    closeAllPanels();           // закрываем все панели перед открытием
+
+    if (!isVisible) {           // если панель была закрыта → открываем
+        panel.style.display = "block";
+    } // если была открыта → просто закроется
 }
 
 async function loadTrekers(userId) {
@@ -273,6 +268,168 @@ async function loadTrekers(userId) {
         opt.textContent = t.tracker_name;
         select.appendChild(opt);
     });
+}
+
+
+// === GLOBAL USER HOLDER (установить при логине / инициализации) ===
+// let currentUser = null;
+
+// Убедись, что updateUIAfterLogin устанавливает currentUser:
+// function updateUIAfterLogin(user) {
+//   currentUser = user;
+//   ...
+// }
+
+// --- Haversine distance (km) ---
+function haversineKm(lat1, lon1, lat2, lon2) {
+    const toRad = deg => deg * Math.PI / 180;
+    const R = 6371; // km
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+}
+
+// --- Утилиты парсинга даты/времени ---
+function combineDateTime(dateStr, timeStr) {
+    // dateStr: YYYY-MM-DD, timeStr: HH:MM
+    if (!dateStr) return null;
+    const t = (timeStr && timeStr.length >= 4) ? timeStr : "00:00";
+    return new Date(dateStr + "T" + t + ":00");
+}
+
+// --- Форматирование дистанции ---
+function fmtKm(v) {
+    if (v == null) return "0км";
+    return `${(Math.round(v*10)/10).toLocaleString('ru-RU')}км`; // 1 decimal
+}
+
+// === APPLY FILTERS ===
+async function applyFilters() {
+    // 1) Проверки
+    if (!currentUser || !currentUser.id) {
+        alert("Пользователь не определён. Войдите в систему.");
+        return;
+    }
+
+    // 2) Собираем параметры фильтра
+    const select = document.getElementById("trekersFilter");
+    const selectedOptions = Array.from(select.selectedOptions).map(o => o.value).filter(v => v !== "");
+    const useAllTrackers = (selectedOptions.length === 0 || (selectedOptions.length === 1 && selectedOptions[0] === ""));
+
+    const dateFrom = document.getElementById("dateFromFilter").value || null; // YYYY-MM-DD or ""
+    const dateTo   = document.getElementById("dateToFilter").value   || null;
+    const timeFrom = document.getElementById("timeFromFilter").value || null; // HH:MM
+    const timeTo   = document.getElementById("timeToFilter").value   || null;
+    const status   = document.getElementById("statusFilter").value; // "" or "1" or "0"
+
+    // 3) Загружаем все точки пользователя (points_new содержит tracker_id и tracker_name)
+    let resp = await fetch(`/api/points_new?user_id=${encodeURIComponent(currentUser.id)}`);
+    let points = await resp.json();
+
+    // 4) Фильтрация по выбранным трекерам
+    if (!useAllTrackers) {
+        const idsInt = selectedOptions.map(v => parseInt(v,10));
+        points = points.filter(p => idsInt.includes(Number(p.tracker_id)));
+    }
+
+    // 5) Фильтрация по датам/времени и статусу
+    points = points.filter(p => {
+        // p.date = 'YYYY-MM-DD', p.time = 'HH:MM:SS' or 'HH:MM'
+        const pDate = p.date || null;
+        const pTimeRaw = p.time ? p.time.slice(0,5) : "00:00"; // keep HH:MM
+        // date filter
+        if (dateFrom && pDate < dateFrom) return false;
+        if (dateTo && pDate > dateTo) return false;
+        // time filter
+        if (timeFrom && pTimeRaw < timeFrom) return false;
+        if (timeTo && pTimeRaw > timeTo) return false;
+        // status filter
+        if (status !== "" && status !== null) {
+            if (String(p.is_active) !== String(status)) return false;
+        }
+        return true;
+    });
+
+    // 6) Обновляем карту — показываем все отфильтрованные точки
+    // подготовим точки в формате updateMap ожидает (lat, lon, tracker_name, date, time, is_active, id, tracker_id)
+    const mapPoints = points.map(p => ({
+        id: p.id,
+        tracker_name: p.tracker_name || ("trk_" + p.tracker_id),
+        lat: p.lat,
+        lon: p.lon,
+        date: p.date,
+        time: (p.time || "").slice(0,5),
+        is_active: p.is_active
+    }));
+    updateMap(mapPoints);
+
+    // 7) Группировка по tracker_id для статистики
+    const groups = {}; // tracker_id -> { tracker_name, pts: [p,...] }
+    points.forEach(p => {
+        const tid = String(p.tracker_id);
+        if (!groups[tid]) groups[tid] = { tracker_name: p.tracker_name || ("trk_"+tid), pts: [] };
+        groups[tid].pts.push(p);
+    });
+
+    // 8) Для каждой группы считаем требуемые поля
+    const listBox = document.getElementById("pointsList");
+    listBox.innerHTML = "";
+
+    Object.keys(groups).forEach(tid => {
+        const g = groups[tid];
+        // сорт по дате+time (точки уже от API сортированы, но на всякий)
+        g.pts.sort((a,b) => {
+            const ta = (a.date || "") + " " + ((a.time||"00:00:00").slice(0,5));
+            const tb = (b.date || "") + " " + ((b.time||"00:00:00").slice(0,5));
+            return ta < tb ? -1 : (ta > tb ? 1 : 0);
+        });
+
+        // период дат и времени (по минимуму и максимуму)
+        const dates = g.pts.map(p => p.date).filter(Boolean);
+        const times = g.pts.map(p => (p.time||"00:00:00").slice(0,5)).filter(Boolean);
+        const minDate = dates.length ? dates[0] : "";
+        const maxDate = dates.length ? dates[dates.length-1] : "";
+        const minTime = times.length ? times[0] : "00:00";
+        const maxTime = times.length ? times[times.length-1] : "00:00";
+
+        // считаем только активные точки для quantity и distance
+        const activePts = g.pts.filter(p => Number(p.is_active) === 1);
+
+        // quantity
+        const quantity = activePts.length;
+
+        // distance: суммируем расстояние между последовательными активными точками
+        let distanceKm = 0;
+        for (let i = 1; i < activePts.length; i++) {
+            const a = activePts[i-1], b = activePts[i];
+            if ((a.lat == null) || (b.lat == null) || (a.lon==null) || (b.lon==null)) continue;
+            distanceKm += haversineKm(Number(a.lat), Number(a.lon), Number(b.lat), Number(b.lon));
+        }
+
+        // формируем строку
+        const rowDiv = document.createElement("div");
+        rowDiv.style.padding = "6px 4px";
+        rowDiv.style.borderBottom = "1px solid #eee";
+        rowDiv.textContent =
+            `ID: ${tid}, Tracker: ${g.tracker_name}, ` +
+            `Date: ${minDate || "-"} --> ${maxDate || "-"}, ` +
+            `Time: ${minTime} --> ${maxTime}, ` +
+            `quantity - ${quantity}, distance: ${fmtKm(distanceKm)}`;
+
+        listBox.appendChild(rowDiv);
+    });
+
+    // 9) Если нет групп (ни один трекер) — показываем сообщение
+    if (Object.keys(groups).length === 0) {
+        listBox.innerHTML = "<div style='color:#666;padding:6px'>Нет точек по заданному фильтру</div>";
+    }
+
+    // 10) Закрываем панель (опционально)
+    // document.getElementById("trekers-panel").style.display = "none";
 }
 
 
