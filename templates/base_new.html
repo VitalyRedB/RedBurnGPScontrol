@@ -31,6 +31,8 @@
     background: white;padding: 15px;border: 1px solid #ccc;border-radius: 8px;z-index: 9000;}
 
 </style>
+
+
 </head>
 
 <body>
@@ -82,11 +84,45 @@
 
 <!-- === FILTER trekers PANEL / Панель фильтра === -->
 <div id="trekers-panel" class="filter-panel">
+
   <h5>Trekers and Points Filter</h5>
   <label for="trekersFilter">Trekers</label>
   <select id="trekersFilter" multiple>
     <option value="" selected>All trekers</option>
   </select>
+
+
+
+
+                        <div class="tracker-select-wrapper">
+                            <div id="trekersDisplay" class="tracker-display" onclick="openTrackerPanel()">
+                                All trackers
+                            </div>
+                        </div>
+
+                        <!-- === POPUP PANEL FOR TRACKER SELECTION === -->
+                        <div id="tracker-popup" class="tracker-popup hidden">
+                            <div class="tracker-popup-inner">
+                                <div class="popup-header">
+                                    <h4>Select Trackers</h4>
+                                    <button onclick="closeTrackerPanel()" class="close-btn">×</button>
+                                </div>
+
+                                <div class="popup-controls">
+                                    <button onclick="selectAllTrackers()" class="btn-small">Select All</button>
+                                    <button onclick="clearAllTrackers()" class="btn-small">Clear</button>
+                                </div>
+
+                                <div id="trackerList" class="tracker-list">
+                                    <!-- JS will insert checkboxes here -->
+                                </div>
+
+                                <button onclick="applyTrackerSelection()" class="btn-apply">Choose</button>
+                            </div>
+                        </div>
+
+
+
 
   <label>From date/time → To date/time</label>
   <div class="date-time-container">
@@ -111,7 +147,8 @@
 </div>
 
 {% block body %}{% endblock %}
-
+<link rel="stylesheet" href="/static/css/selectTrackers.css">
+<script src="/static/js/selectTrekers.js"></script>
 </body>
 </html>
 

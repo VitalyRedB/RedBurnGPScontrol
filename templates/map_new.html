@@ -153,6 +153,7 @@ function login() {
         if (data.status === "ok") {
             updateUIAfterLogin(data.user);
             closeLogin();      // закрываем окно логина
+
         } else {
             alert("Wrong login or password");
         }
@@ -209,7 +210,8 @@ function updateUIAfterLogin(user) {
     document.getElementById("selectTrackersBtn").disabled = false;
 
     refreshUserData(user.id);  // ← вместо showPoints + updateMap
-    loadTrekers(user.id);   // <<< ДОБАВИТЬ
+    loadTrekers(user.id);   // <<< ЗАПУСКАЕМ формирование списка трекеров по данному пользователю
+    loadTrekersPopup(user.id);
     currentUser = user;
 }
 
