@@ -4,6 +4,7 @@ from flask import Flask, jsonify, render_template, request
 from db import get_points, get_users, execute_db_action
 from add_point import handle_add_point
 from config import DB_NAME
+from email_utils import send_confirm_email
 import sqlite3
 import bcrypt
 
@@ -288,6 +289,7 @@ def api_login():
     """
     Вход пользователя: получаем username и password,
     ищем в users, проверяем хеш пароля.
+    Добавлено: запрет логина, если email не подтверждён.
     """
     data = request.get_json()
     username = data.get("username")
@@ -299,58 +301,117 @@ def api_login():
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (username,))
+    cur.execute(
+        "SELECT id, username, password_hash, status FROM users WHERE username = ?",
+        (username,)
+    )
     user = cur.fetchone()
     conn.close()
 
     if not user:
         return jsonify({"status": "error", "message": "User not found"}), 404
 
+    # --- ДОБАВЛЕНО: проверка подтверждения email ---
+    if user["status"] != 1:
+        return jsonify({"status": "error", "message": "Email not confirmed"}), 403
+
     # Проверяем пароль через bcrypt
     if bcrypt.checkpw(password.encode(), user["password_hash"].encode()):
         # Успешный вход, ставим куку
         resp = jsonify({"status": "ok", "user": {"id": user["id"], "username": user["username"]}})
-        resp.set_cookie("uid", str(user["id"]), max_age=60*60*24*365)
+        resp.set_cookie("uid", str(user["id"]), max_age=60*60*24*365, httponly=True)
         return resp
     else:
         return jsonify({"status": "error", "message": "Invalid password"}), 401
 
 
+# --- открытие страницы для регистрации нового пользователя ---
+@app.route("/register")
+def register_page():
+    return render_template("register.html")
+
+# --- API для регистрации нового пользователя ---
+# --- API для регистрации нового пользователя ---
 # --- API для регистрации нового пользователя ---
 @app.route("/api/register", methods=["POST"])
 def api_register():
     """
-    Регистрация нового пользователя: username+password,
-    пароль хешируется и сохраняется в DB.
+    Регистрация нового пользователя:
+    - username + email + password
+    - подтверждение email через токен
+    - упрощённая логика для наглядности
     """
+    import uuid
     data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")
 
-    if not username or not password:
-        return jsonify({"status": "error", "message": "Username and password required"}), 400
+    username = data.get("username", "").strip()
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
 
-    # Проверяем, существует ли уже пользователь
+    if not username or not email or not password:
+        return jsonify({
+            "status": "error",
+            "message": "Username, email and password are required"
+        }), 400
+
     conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+
+    # --- 1. Проверяем username ---
     cur.execute("SELECT id FROM users WHERE username = ?", (username,))
     if cur.fetchone():
         conn.close()
-        return jsonify({"status": "error", "message": "Username already exists"}), 409
+        return jsonify({
+            "status": "error",
+            "message": "Username already exists"
+        }), 409
 
-    # Хешируем пароль
+    # --- 2. Проверяем email ---
+    cur.execute("SELECT id, status, token FROM users WHERE email = ?", (email,))
+    row = cur.fetchone()
+
+    if row:
+        if row["status"] == 0:
+            # Email есть, но не подтверждён → повторная отправка письма
+            token = row["token"]
+            #send_confirm_email(email, token)  # временно закомментировано
+            conn.close()
+            return jsonify({
+                "status": "ok",
+                "message": "Email already registered. Confirmation email sent again."
+            }), 200
+        else:
+            # Email уже подтверждён
+            conn.close()
+            return jsonify({
+                "status": "error",
+                "message": "Email already registered. Please login or recover your password."
+            }), 409
+
+    # --- 3. Хешируем пароль ---
+    import bcrypt
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
-    # Сохраняем нового пользователя
-    cur.execute("INSERT INTO users (username, password_hash, status) VALUES (?, ?, 1)", (username, pw_hash))
+    # --- 4. Генерируем токен для подтверждения email ---
+    token = uuid.uuid4().hex
+
+    # --- 5. Вставляем нового пользователя с status=0 ---
+    cur.execute(
+        "INSERT INTO users (username, email, password_hash, token, status) VALUES (?, ?, ?, ?, 0)",
+        (username, email, pw_hash, token)
+    )
     conn.commit()
-    user_id = cur.lastrowid
     conn.close()
 
-    resp = jsonify({"status": "ok", "user": {"id": user_id, "username": username}})
-    resp.set_cookie("uid", str(user_id), max_age=60*60*24*365)
-    return resp
+    # --- 6. Отправка письма ---
+    send_confirm_email(email, token)  # закомментировано для теста
+
+    return jsonify({
+        "status": "ok",
+        "message": "Registration successful. Please check your email to confirm registration."
+    }), 201
+
 
 
 # --- Обновим API /logout ---
@@ -359,6 +420,41 @@ def api_logout():
     resp = jsonify({"status": "ok"})
     resp.set_cookie("uid", "", expires=0)
     return resp
+
+
+# --- Проверка ответа с почты пользователя ---
+@app.route("/confirm-email")
+def confirm_email():
+    token = request.args.get("token")
+
+    if not token:
+        return "Invalid confirmation link", 400
+
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT id, status FROM users WHERE token = ?",
+        (token,)
+    )
+    user = cur.fetchone()
+
+    if not user:
+        conn.close()
+        return "Confirmation link is invalid or expired", 404
+
+    if user["status"] == 1:
+        conn.close()
+        return render_template("email_confirmed.html")
+
+    cur.execute(
+        """UPDATE users SET status = 1, token = NULL WHERE id = ?""", (user["id"],))
+    conn.commit()
+    conn.close()
+
+    return render_template("email_confirmed.html")
+
 
 if __name__ == "__main__":
     app.run(debug=True)

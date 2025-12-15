@@ -1,0 +1,94 @@
+<!-- === /home/RedBurnGPScontrol/mysite/templates/register.html === -->
+{% extends "base_new.html" %}
+
+{% block title %}
+<title>Регистрация нового пользователя</title>
+{% endblock %}
+
+{% block body %}
+<div id="register-panel" class="panel">
+    <h2>Регистрация нового пользователя</h2>
+
+    <form id="registerForm">
+        <label for="username">Username:</label><br>
+        <input type="text" id="username" name="username" required><br><br>
+
+        <label for="email">Email:</label><br>
+        <input type="email" id="email" name="email" required><br><br>
+
+        <label for="password">Password:</label><br>
+        <input type="password" id="password" name="password" required><br><br>
+
+        <p>Подтвердите регистрацию, ответив на письмо.</p>
+
+        <button type="submit">Отправить</button>
+    </form>
+
+    <div id="registerMessage" style="margin-top:10px;"></div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const form = document.getElementById("registerForm");
+    const message = document.getElementById("registerMessage");
+
+    form.addEventListener("submit", async function(e) {
+        e.preventDefault();
+
+        // Получаем значения из полей
+        const username = document.getElementById("username").value.trim();
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value;
+
+        // Очистка предыдущего сообщения
+        message.textContent = "";
+        message.style.color = "black";
+
+        // Формируем данные для отправки
+        const payload = { username, email, password };
+
+        try {
+            const res = await fetch("/api/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+
+            // Обработка всех возможных сценариев
+            if (res.status === 201) {
+                // Новый пользователь успешно создан
+                message.style.color = "green";
+                message.textContent = data.message;
+                form.reset();
+            }
+            else if (res.status === 200) {
+                // Повторная отправка письма для неподтверждённого email
+                message.style.color = "blue";
+                message.textContent = data.message;
+            }
+            else if (res.status === 409) {
+                // Ошибка: username/email уже существует
+                message.style.color = "red";
+                message.textContent = data.message;
+            }
+            else if (res.status === 400) {
+                // Ошибка: не заполнены обязательные поля
+                message.style.color = "red";
+                message.textContent = data.message;
+            }
+            else {
+                // Любая другая ошибка
+                message.style.color = "red";
+                message.textContent = "Unexpected error: " + data.message;
+            }
+        } catch (err) {
+            message.style.color = "red";
+            message.textContent = "Network or server error. Please try again.";
+            console.error(err);
+        }
+    });
+});
+</script>
+{% endblock %}
