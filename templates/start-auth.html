@@ -1,0 +1,27 @@
+<!-- /templates/complete_auth.html -->
+<!-- регистрация или новый пароль -->
+{% extends "base_new.html" %}
+
+{% block title %}
+<title> Регистрация или смена пароля</title>
+{% endblock %}
+
+{% block body %}
+<form id="emailForm">
+    <input type="email" id="email" required>
+    <button>Продолжить</button>
+</form>
+<div id="msg"></div>
+
+<script>
+emailForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const res = await fetch("/api/start-auth", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ email: email.value })
+    });
+
+    msg.innerText = "Если email существует — письмо отправлено";
+});
+</script>{% endblock %}

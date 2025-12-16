@@ -4,9 +4,12 @@ from flask import Flask, jsonify, render_template, request
 from db import get_points, get_users, execute_db_action
 from add_point import handle_add_point
 from config import DB_NAME
-from email_utils import send_confirm_email
+
 import sqlite3
 import bcrypt
+
+import uuid
+from email_utils import send_confirm_email  # твой файл с функцией отправки письма
 
 import logging
 
@@ -330,6 +333,11 @@ def api_login():
 def register_page():
     return render_template("register.html")
 
+# --- открытие страницы для регистрации нового пользователя ---
+@app.route("/start-auth")
+def register_page():
+    return render_template("start-auth.html")
+
 # --- API для регистрации нового пользователя ---
 # --- API для регистрации нового пользователя ---
 # --- API для регистрации нового пользователя ---
@@ -454,6 +462,116 @@ def confirm_email():
     conn.close()
 
     return render_template("email_confirmed.html")
+
+
+# --- Регистрация пользователя или смена пароля СТАРТовая 1 ---
+
+
+TTL_MINUTES = 15  # время жизни токена
+
+@app.route("/api/start-auth", methods=["POST"])
+def start_auth():
+    data = request.get_json()
+    email = data.get("email")
+
+    if not email:
+        return jsonify({"status": "error", "message": "Email required"}), 400
+
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute("SELECT id, status FROM users WHERE email = ?", (email,))
+    user = cur.fetchone()
+
+    token = uuid.uuid4().hex
+    token_expires = f"datetime('now','+{TTL_MINUTES} minutes')"
+
+    if user:
+        # email есть — перезаписываем токен
+        cur.execute(f"""
+            UPDATE users
+            SET token=?, token_expires=datetime('now','+{TTL_MINUTES} minutes')
+            WHERE email=?
+        """, (token, email))
+        action = "reset" if user["status"] == 1 else "register"
+    else:
+        # новый email — создаём запись со статус=0
+        cur.execute(f"""
+            INSERT INTO users (email, token, token_expires, status)
+            VALUES (?, ?, datetime('now','+{TTL_MINUTES} minutes'), 0)
+        """, (email, token))
+        action = "register"
+
+    conn.commit()
+    conn.close()
+
+    # отправляем письмо
+    try:
+        send_confirm_email(email, token)
+    except Exception as e:
+        return jsonify({"status":"error","message":f"Ошибка отправки письма: {str(e)}"}), 500
+
+    return jsonify({"status":"ok","message":"Письмо отправлено. Проверьте почту.", "action": action}), 200
+
+
+# --- Регистрация пользователя или смена пароля Финишовая 2 ---
+@app.route("/api/complete-auth", methods=["POST"])
+def complete_auth():
+    data = request.get_json()
+    token = data.get("token")
+    password = data.get("password")
+    username = data.get("username")
+
+    if not token or not password:
+        return jsonify(message="Invalid data"), 400
+
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, status FROM users
+        WHERE token = ? AND token_expires > datetime('now')
+    """, (token,))
+    user = cur.fetchone()
+
+    if not user:
+        return jsonify(message="Token invalid or expired"), 400
+
+    pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+    if user["status"] == 0:
+        # регистрация
+        if not username:
+            return jsonify(message="Username required"), 400
+
+        cur.execute("SELECT 1 FROM users WHERE username = ?", (username,))
+        if cur.fetchone():
+            return jsonify(message="Username already taken"), 409
+
+        cur.execute("""
+            UPDATE users
+            SET username=?, password_hash=?, status=1,
+                token=NULL, token_expires=NULL
+            WHERE id=?
+        """, (username, pw_hash, user["id"]))
+
+        msg = "Регистрация завершена"
+
+    else:
+        # смена пароля
+        cur.execute("""
+            UPDATE users
+            SET password_hash=?, token=NULL, token_expires=NULL
+            WHERE id=?
+        """, (pw_hash, user["id"]))
+
+        msg = "Пароль обновлён"
+
+    conn.commit()
+    conn.close()
+    return jsonify(message=msg)
 
 
 if __name__ == "__main__":

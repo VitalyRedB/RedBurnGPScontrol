@@ -1,4 +1,5 @@
 <!-- === /home/RedBurnGPScontrol/mysite/templates/register.html === -->
+<!-- === Панель регистрации нового пользователя и JS === -->
 {% extends "base_new.html" %}
 
 {% block title %}
@@ -28,23 +29,17 @@
 </div>
 
 <script>
-document.addEventListener("DOMContentLoaded", function() {
+    document.addEventListener("DOMContentLoaded", function() {
     const form = document.getElementById("registerForm");
     const message = document.getElementById("registerMessage");
 
     form.addEventListener("submit", async function(e) {
         e.preventDefault();
 
-        // Получаем значения из полей
         const username = document.getElementById("username").value.trim();
         const email = document.getElementById("email").value.trim();
         const password = document.getElementById("password").value;
 
-        // Очистка предыдущего сообщения
-        message.textContent = "";
-        message.style.color = "black";
-
-        // Формируем данные для отправки
         const payload = { username, email, password };
 
         try {
@@ -56,39 +51,20 @@ document.addEventListener("DOMContentLoaded", function() {
 
             const data = await res.json();
 
-            // Обработка всех возможных сценариев
-            if (res.status === 201) {
-                // Новый пользователь успешно создан
+            if (res.ok) {
                 message.style.color = "green";
                 message.textContent = data.message;
                 form.reset();
-            }
-            else if (res.status === 200) {
-                // Повторная отправка письма для неподтверждённого email
-                message.style.color = "blue";
-                message.textContent = data.message;
-            }
-            else if (res.status === 409) {
-                // Ошибка: username/email уже существует
+            } else {
                 message.style.color = "red";
                 message.textContent = data.message;
-            }
-            else if (res.status === 400) {
-                // Ошибка: не заполнены обязательные поля
-                message.style.color = "red";
-                message.textContent = data.message;
-            }
-            else {
-                // Любая другая ошибка
-                message.style.color = "red";
-                message.textContent = "Unexpected error: " + data.message;
             }
         } catch (err) {
             message.style.color = "red";
-            message.textContent = "Network or server error. Please try again.";
-            console.error(err);
+            message.textContent = "Ошибка сети или сервера";
         }
     });
 });
+
 </script>
 {% endblock %}
